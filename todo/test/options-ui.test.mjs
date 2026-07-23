@@ -42,6 +42,12 @@ test("options page reports picker and creation failures in the completed-file st
   assert.match(source, /elements\.createCompletedFile\.addEventListener\("click", async \(\) => \{[\s\S]*showCompletedFileResult\(result\)/);
 });
 
+test("options page refreshes file status after picker and creation successes", () => {
+  const source = readFileSync("src/options/options.js", "utf8");
+
+  assert.match(source, /function showCompletedFileResult\(result\)[\s\S]*if \(result\.ok\) \{[\s\S]*await refreshState\(\)/);
+});
+
 test("options page sends color preset changes as a narrow settings patch", () => {
   const source = readFileSync("src/options/options.js", "utf8");
 
@@ -76,10 +82,44 @@ test("completed record delete failures show an error and keep the row", async (t
   assert.equal(page.findByTag("input", page.elements.completedList).value, "Original task");
 });
 
+test("completed record mutation failures keep the last successful list when refresh also fails", async (t) => {
+  let readCount = 0;
+  const page = await loadOptionsPage(t, {
+    [MESSAGE_TYPES.UPDATE_COMPLETED_RECORD]: { ok: false, message: "Edit failed" },
+    [MESSAGE_TYPES.READ_COMPLETED_DATA]: () => {
+      readCount += 1;
+      return readCount === 1
+        ? completedReadResult()
+        : { ok: false, message: "Read failed" };
+    }
+  });
+  const input = page.findByTag("input", page.elements.completedList);
+
+  input.value = "Unsaved text";
+  await input.dispatch("change");
+  await flush();
+
+  assert.equal(page.elements.completedFileStatus.textContent, "Edit failed");
+  assert.equal(page.findByTag("input", page.elements.completedList).value, "Original task");
+});
+
 test("completed file status keeps permission text after completed data refresh", async (t) => {
   const page = await loadOptionsPage(t);
 
   assert.equal(page.elements.completedFileStatus.textContent, "completed.json (granted)");
+});
+
+test("completed file status keeps prompt permission when completed data cannot be read", async (t) => {
+  const page = await loadOptionsPage(t, {
+    [MESSAGE_TYPES.GET_STATE]: {
+      ok: true,
+      settings: { colorPresets: ["#ffffff"] },
+      completedStatus: { fileName: "completed.json", permission: "prompt" }
+    },
+    [MESSAGE_TYPES.READ_COMPLETED_DATA]: { ok: false, message: "Permission required" }
+  });
+
+  assert.equal(page.elements.completedFileStatus.textContent, "completed.json (prompt)");
 });
 
 async function loadOptionsPage(t, overrides = {}) {
@@ -112,7 +152,10 @@ async function loadOptionsPage(t, overrides = {}) {
   globalThis.chrome = {
     runtime: {
       sendMessage(message) {
-        if (overrides[message.type]) return Promise.resolve(overrides[message.type]);
+        if (overrides[message.type]) {
+          const override = overrides[message.type];
+          return Promise.resolve(typeof override === "function" ? override(message) : override);
+        }
         if (message.type === MESSAGE_TYPES.GET_STATE) {
           return Promise.resolve({
             ok: true,
@@ -121,14 +164,7 @@ async function loadOptionsPage(t, overrides = {}) {
           });
         }
         if (message.type === MESSAGE_TYPES.READ_COMPLETED_DATA) {
-          return Promise.resolve({
-            ok: true,
-            fileName: "completed.json",
-            data: {
-              version: 1,
-              completed: [{ text: "Original task", completedAt: "2026-07-23T09:30:00.000Z" }]
-            }
-          });
+          return Promise.resolve(completedReadResult());
         }
         return Promise.resolve({ ok: true });
       }
@@ -157,6 +193,17 @@ async function loadOptionsPage(t, overrides = {}) {
     },
     findByText(text, root) {
       return findElement(root, (element) => element.textContent === text);
+    }
+  };
+}
+
+function completedReadResult() {
+  return {
+    ok: true,
+    fileName: "completed.json",
+    data: {
+      version: 1,
+      completed: [{ text: "Original task", completedAt: "2026-07-23T09:30:00.000Z" }]
     }
   };
 }

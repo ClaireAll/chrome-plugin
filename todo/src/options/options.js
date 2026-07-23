@@ -126,8 +126,7 @@ async function refreshCompletedData(statusOverride = "") {
     message: error?.message || "无法读取完成记录文件"
   }));
   if (!result.ok) {
-    completedData = { completed: [] };
-    elements.completedFileStatus.textContent = result.message || "未绑定完成记录文件";
+    elements.completedFileStatus.textContent = statusOverride || completedFileStatusText() || result.message || "未绑定完成记录文件";
   } else {
     completedData = result.data;
     elements.completedFileStatus.textContent = statusOverride || completedFileStatusText(result.fileName);
@@ -151,7 +150,7 @@ async function handleCompletedMutation(operation, fallbackMessage) {
 
 async function showCompletedFileResult(result) {
   if (result.ok) {
-    await refreshCompletedData();
+    await refreshState();
     return;
   }
   elements.completedFileStatus.textContent = result.message || "Completed JSON file operation failed";
@@ -169,8 +168,9 @@ async function refreshState() {
 }
 
 function completedFileStatusText(fileName) {
-  const name = fileName || completedStatus?.fileName || "已加载完成记录文件";
-  return completedStatus?.permission && completedStatus.fileName === fileName
+  const name = fileName || completedStatus?.fileName;
+  if (!name) return "";
+  return completedStatus?.permission && completedStatus.fileName === name
     ? `${name} (${completedStatus.permission})`
     : name;
 }

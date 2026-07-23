@@ -67,6 +67,28 @@ test("panel fits within a short viewport", async () => {
   assert.ok(top + 476 <= context.window.innerHeight - 12);
 });
 
+test("open panel is reclamped after the viewport shrinks", async () => {
+  const { context, document } = createContentContext();
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+  document.elements[".todo-ball"].dispatch("click", {});
+  await delay(0);
+
+  context.window.innerWidth = 400;
+  context.window.innerHeight = 500;
+  context.window.dispatch("resize");
+
+  const left = Number.parseInt(document.elements[".todo-panel"].style.left, 10);
+  const top = Number.parseInt(document.elements[".todo-panel"].style.top, 10);
+  assert.ok(left >= 12);
+  assert.ok(left + 376 <= context.window.innerWidth - 12);
+  assert.ok(top >= 12);
+  assert.ok(top + 476 <= context.window.innerHeight - 12);
+});
+
 test("clicking the ball does not snap it but dragging does", async () => {
   const { context, messages, document } = createContentContext();
 
@@ -174,7 +196,15 @@ function createContentContext(options = {}) {
     },
     document,
     location: { href: "https://example.com/page" },
-    window: { innerWidth: options.innerWidth || 1200, innerHeight: options.innerHeight || 800, addEventListener() {}, setTimeout, clearTimeout },
+    window: {
+      innerWidth: options.innerWidth || 1200,
+      innerHeight: options.innerHeight || 800,
+      listeners: {},
+      addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); },
+      dispatch(type, event = {}) { for (const listener of this.listeners[type] || []) listener(event); },
+      setTimeout,
+      clearTimeout
+    },
     setTimeout,
     clearTimeout,
     console,

@@ -78,6 +78,9 @@
   list.addEventListener("dragover", handleTodoDragOver);
   list.addEventListener("drop", handleTodoDrop);
   list.addEventListener("dragend", clearTodoDrag);
+  window.addEventListener("resize", () => {
+    if (state.isOpen) positionPanel();
+  });
 
   runSafely(refreshState());
 

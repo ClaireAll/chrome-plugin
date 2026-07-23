@@ -25,34 +25,135 @@ test("complete message appends completed JSON and removes unfinished todo", asyn
   assert.deepEqual(chromeStub.values.todoUnfinishedItems, []);
 });
 
+test("complete message keeps unfinished todo until append resolves", async () => {
+  const chromeStub = createChromeStub();
+  globalThis.chrome = chromeStub.chrome;
+  const worker = await import(`../src/background/service-worker.js?test=${Date.now()}-deferred`);
+
+  chromeStub.values.todoUnfinishedItems = [{ id: "a", text: "Task A", color: "#fff" }];
+  let resolveAppend;
+  worker.__setCompletedStoreForTest({
+    appendCompletedRecord() {
+      return new Promise((resolve) => {
+        resolveAppend = resolve;
+      });
+    }
+  });
+
+  const completion = worker.handleMessage({
+    type: MESSAGE_TYPES.COMPLETE_TODO,
+    payload: { id: "a", completedAt: "2026-07-23T09:30:00.000Z" }
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(chromeStub.values.todoUnfinishedItems, [{ id: "a", text: "Task A", color: "#fff" }]);
+
+  resolveAppend({ ok: true });
+  const result = await completion;
+  assert.equal(result.ok, true);
+  assert.deepEqual(chromeStub.values.todoUnfinishedItems, []);
+});
+
+test("complete message preserves unfinished todo when append fails", async () => {
+  const chromeStub = createChromeStub();
+  globalThis.chrome = chromeStub.chrome;
+  const worker = await import(`../src/background/service-worker.js?test=${Date.now()}-append-failure`);
+
+  const todo = { id: "a", text: "Task A", color: "#fff" };
+  chromeStub.values.todoUnfinishedItems = [todo];
+  worker.__setCompletedStoreForTest({
+    async appendCompletedRecord() {
+      return { ok: false, reason: "write_failed", message: "Could not write completed file" };
+    }
+  });
+
+  const result = await worker.handleMessage({
+    type: MESSAGE_TYPES.COMPLETE_TODO,
+    payload: { id: "a", completedAt: "2026-07-23T09:30:00.000Z" }
+  });
+
+  assert.deepEqual(result, { ok: false, reason: "write_failed", message: "Could not write completed file" });
+  assert.deepEqual(chromeStub.values.todoUnfinishedItems, [todo]);
+  assert.equal(chromeStub.clearCalls, 0);
+});
+
+test("late alarm marks todo without creating a notification", async () => {
+  const chromeStub = createChromeStub();
+  globalThis.chrome = chromeStub.chrome;
+  const worker = await import(`../src/background/service-worker.js?test=${Date.now()}-late-alarm`);
+
+  chromeStub.values.todoUnfinishedItems = [{
+    id: "a",
+    text: "Task A",
+    color: "#fff",
+    reminderAt: "2026-07-23T09:00:00.000Z",
+    reminded: false
+  }];
+
+  await worker.handleAlarm(
+    { name: "todo-reminder:a" },
+    "2026-07-23T09:02:01.000Z"
+  );
+
+  assert.equal(chromeStub.values.todoUnfinishedItems[0].reminded, true);
+  assert.equal(chromeStub.notificationCalls, 0);
+});
+
+test("notification click handler is a no-op", async () => {
+  const chromeStub = createChromeStub();
+  globalThis.chrome = chromeStub.chrome;
+  await import(`../src/background/service-worker.js?test=${Date.now()}-notification-click`);
+
+  assert.equal(typeof chromeStub.notificationClick, "function");
+  assert.doesNotThrow(() => chromeStub.notificationClick("todo-reminder:a"));
+  assert.equal(chromeStub.notificationCalls, 0);
+});
+
 function createChromeStub() {
   const values = {};
+  let notificationClick;
   const runtime = { lastError: null, onMessage: { addListener() {} } };
+  const stub = { values };
 
-  return {
-    values,
-    chrome: {
-      runtime,
-      alarms: {
-        create() {},
-        clear() {},
-        onAlarm: { addListener() {} }
+  stub.chrome = {
+    runtime,
+    alarms: {
+      create() {},
+      clear() {
+        stub._clearCalls = (stub._clearCalls || 0) + 1;
       },
-      notifications: { onClicked: { addListener() {} } },
-      storage: {
-        local: {
-          get(key, callback) {
-            const result = Array.isArray(key)
-              ? Object.fromEntries(key.map((name) => [name, values[name]]))
-              : { [key]: values[key] };
-            callback(result);
-          },
-          set(value, callback) {
-            Object.assign(values, value);
-            callback?.();
-          }
+      onAlarm: { addListener() {} }
+    },
+    notifications: {
+      create() {
+        stub._notificationCalls = (stub._notificationCalls || 0) + 1;
+      },
+      onClicked: {
+        addListener(callback) {
+          notificationClick = callback;
+        }
+      }
+    },
+    storage: {
+      local: {
+        get(key, callback) {
+          const result = Array.isArray(key)
+            ? Object.fromEntries(key.map((name) => [name, values[name]]))
+            : { [key]: values[key] };
+          callback(result);
+        },
+        set(value, callback) {
+          Object.assign(values, value);
+          callback?.();
         }
       }
     }
   };
+
+  Object.defineProperties(stub, {
+    clearCalls: { get: () => stub._clearCalls || 0 },
+    notificationCalls: { get: () => stub._notificationCalls || 0 },
+    notificationClick: { get: () => notificationClick }
+  });
+  return stub;
 }

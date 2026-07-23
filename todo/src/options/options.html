@@ -9,9 +9,31 @@
   <body>
     <main class="todo-options-shell">
       <h1>todo</h1>
-      <section id="completedRecords"></section>
-      <section id="storageSettings"></section>
+      <section class="options-section" aria-labelledby="storageHeading">
+        <h2 id="storageHeading">完成记录文件</h2>
+        <div class="control-row">
+          <button id="pickCompletedFile" type="button">选择文件</button>
+          <button id="createCompletedFile" type="button">新建文件</button>
+          <button id="requestCompletedPermission" type="button">请求权限</button>
+          <span id="completedFileStatus" class="status-text"></span>
+        </div>
+      </section>
+      <section class="options-section" aria-labelledby="completedHeading">
+        <div class="section-heading">
+          <h2 id="completedHeading">完成记录</h2>
+          <input id="completedSearch" type="search" placeholder="搜索任务" aria-label="搜索完成记录" />
+        </div>
+        <div id="completedList" class="completed-list"></div>
+      </section>
+      <section class="options-section" aria-labelledby="colorHeading">
+        <div class="section-heading">
+          <h2 id="colorHeading">颜色预设</h2>
+          <button id="addColorPreset" type="button">添加颜色</button>
+        </div>
+        <div id="colorPresetList" class="color-preset-list"></div>
+      </section>
       <section id="weeklySummary">
+        <h2>本周完成</h2>
         <div id="weeklyChart"></div>
       </section>
     </main>

@@ -139,10 +139,53 @@ test("completed-file binding storage failure preserves the existing handle and m
   assert.deepEqual(chromeStorage.storage.todoCompletedFileMeta, originalMeta);
 });
 
+test("completed append writes back to the same handle read even if binding changes mid-operation", async () => {
+  const aWrites = [];
+  const bWrites = [];
+  const first = createHandle("a.json", "", aWrites);
+  const second = createHandle("b.json", JSON.stringify({
+    version: 1,
+    completed: [{ text: "B old", completedAt: "2026-07-23T08:00:00.000Z" }]
+  }), bWrites);
+  const indexedDb = createIndexedDbStub();
+  globalThis.indexedDB = indexedDb;
+  globalThis.showSaveFilePicker = async () => first;
+  globalThis.chrome = createChromeStorage().chrome;
+
+  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-fixed-handle`);
+  await store.createCompletedJsonFile();
+  first.setText(JSON.stringify({
+    version: 1,
+    completed: [{ text: "A old", completedAt: "2026-07-23T08:00:00.000Z" }]
+  }));
+  first.onRead(() => indexedDb.set("completed-json", second));
+
+  const result = await store.appendCompletedRecordToFile("A new", "2026-07-23T09:30:00.000Z");
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(JSON.parse(first.text()).completed, [
+    { text: "A old", completedAt: "2026-07-23T08:00:00.000Z" },
+    { text: "A new", completedAt: "2026-07-23T09:30:00.000Z" }
+  ]);
+  assert.deepEqual(JSON.parse(second.text()).completed, [
+    { text: "B old", completedAt: "2026-07-23T08:00:00.000Z" }
+  ]);
+});
+
 function createHandle(name, initialText, writes, options = {}) {
   let text = initialText;
+  let onRead = () => {};
   return {
     name,
+    text() {
+      return text;
+    },
+    setText(nextText) {
+      text = nextText;
+    },
+    onRead(callback) {
+      onRead = callback;
+    },
     async queryPermission() {
       return "granted";
     },
@@ -150,6 +193,7 @@ function createHandle(name, initialText, writes, options = {}) {
       return "granted";
     },
     async getFile() {
+      onRead();
       return { async text() { return text; } };
     },
     async createWritable() {
@@ -204,6 +248,9 @@ function createChromeStorage(initial = {}) {
 function createIndexedDbStub() {
   const storeValues = new Map();
   return {
+    set(key, value) {
+      storeValues.set(key, value);
+    },
     open() {
       const request = {};
       const db = {
@@ -213,8 +260,8 @@ function createIndexedDbStub() {
           }
         },
         createObjectStore() {},
-        transaction() {
-          return {
+        transaction(_storeName, mode) {
+          const transaction = {
             objectStore() {
               return {
                 get(key) {
@@ -222,15 +269,18 @@ function createIndexedDbStub() {
                 },
                 put(value, key) {
                   storeValues.set(key, value);
-                  return asyncRequest(value);
+                  return asyncRequest(value, () => transaction.oncomplete?.());
                 },
                 delete(key) {
                   storeValues.delete(key);
-                  return asyncRequest(undefined);
+                  return asyncRequest(undefined, () => {
+                    if (mode === "readwrite") transaction.oncomplete?.();
+                  });
                 }
               };
             }
           };
+          return transaction;
         }
       };
       queueMicrotask(() => {
@@ -242,11 +292,12 @@ function createIndexedDbStub() {
   };
 }
 
-function asyncRequest(result) {
+function asyncRequest(result, afterSuccess = () => {}) {
   const request = {};
   queueMicrotask(() => {
     request.result = result;
     request.onsuccess?.();
+    afterSuccess();
   });
   return request;
 }

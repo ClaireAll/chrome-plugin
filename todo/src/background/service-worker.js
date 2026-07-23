@@ -144,12 +144,23 @@ async function deleteTodo(id) {
 }
 
 async function completeTodo(payload) {
-  const items = await loadTodoItems();
-  const item = items.find((todo) => todo.id === payload.id);
+  let items = await loadTodoItems();
+  let item = items.find((todo) => todo.id === payload.id);
   if (!item) return failure("missing_todo", "Todo was not found");
 
-  let receiptItems = items;
   let receipt = completionReceiptFor(item, payload.completedAt);
+  const recovery = await completePriorMatchingPendingCompletions(items, item.id, receipt);
+  if (!recovery.ok) return recovery;
+  items = recovery.items;
+  item = items.find((todo) => todo.id === payload.id);
+  if (!item) return failure("missing_todo", "Todo was not found");
+
+  receipt = completionReceiptFor(item, payload.completedAt);
+  return completeTodoItem(items, item, receipt);
+}
+
+async function completeTodoItem(items, item, receipt) {
+  let receiptItems = items;
   if (!sameCompletionReceipt(item.completionReceipt, receipt)) {
     receiptItems = withCompletionReceipt(items, item.id, receipt);
     await saveTodoItems(receiptItems);
@@ -182,6 +193,18 @@ async function completeTodo(payload) {
 
   await chrome.alarms.clear(alarmNameForTodo(item.id));
   return saveItems(deleteTodoItem(receiptItems, item.id));
+}
+
+async function completePriorMatchingPendingCompletions(items, targetId, targetReceipt) {
+  let currentItems = items;
+  while (true) {
+    const pending = currentItems.find((todo) => todo.id !== targetId && isMatchingPendingCompletion(todo, targetReceipt));
+    if (!pending) return success({ items: currentItems });
+
+    const result = await completeTodoItem(currentItems, pending, completionReceiptFor(pending, pending.completionReceipt.completedAt));
+    if (!result.ok) return result;
+    currentItems = result.items;
+  }
 }
 
 function enqueueMutation(operation) {
@@ -242,6 +265,12 @@ function sameCompletionReceipt(left, right) {
     left.appendStarted === right.appendStarted &&
     left.appended === right.appended &&
     left.matchingCountBefore === right.matchingCountBefore;
+}
+
+function isMatchingPendingCompletion(item, targetReceipt) {
+  if (!item?.completionReceipt?.appendStarted || item.completionReceipt.appended) return false;
+  const receipt = completionReceiptFor(item, item.completionReceipt.completedAt);
+  return receipt.text === targetReceipt.text && receipt.completedAt === targetReceipt.completedAt;
 }
 
 async function countCompletedRecords(receipt) {

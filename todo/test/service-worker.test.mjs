@@ -173,6 +173,45 @@ test("completion retry uses the original receipt text snapshot", async (t) => {
   assert.deepEqual(completed, [{ text: "Original text", completedAt: "2026-07-23T09:30:00.000Z" }]);
 });
 
+test("completion recovers an older same-signature pending receipt before completing a new todo", async (t) => {
+  const chromeStub = installChromeStub(t);
+  const worker = await importWorker("completion-pending-owner");
+  const completed = [];
+  chromeStub.values.todoUnfinishedItems = [
+    {
+      id: "a",
+      text: "Task A",
+      color: "#fff",
+      completionReceipt: {
+        text: "Task A",
+        completedAt: "2026-07-23T09:30:00.000Z",
+        appendStarted: true,
+        appended: false,
+        matchingCountBefore: 0
+      }
+    },
+    { id: "b", text: "Task A", color: "#fff" }
+  ];
+  worker.__setCompletedStoreForTest({
+    async readCompletedData() {
+      return { ok: true, data: { version: 1, completed: [...completed] } };
+    },
+    async appendCompletedRecord(record) {
+      completed.push(record);
+      return { ok: true };
+    }
+  });
+
+  await complete(worker, "b", "2026-07-23T09:30:00.000Z");
+  await complete(worker, "a", "2026-07-23T09:30:00.000Z");
+
+  assert.deepEqual(completed, [
+    { text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" },
+    { text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" }
+  ]);
+  assert.deepEqual(chromeStub.values.todoUnfinishedItems, []);
+});
+
 test("complete message preserves unfinished todo when append fails", async (t) => {
   const chromeStub = installChromeStub(t);
   const worker = await importWorker("append-failure");

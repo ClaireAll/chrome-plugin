@@ -10,6 +10,9 @@ const HANDLE_STORE = "handles";
 const COMPLETED_HANDLE_KEY = "completed-json";
 const COMPLETED_META_KEY = "todoCompletedFileMeta";
 const PERMISSION_MESSAGE = "Completed JSON file permission is required";
+const COMPLETED_LOCK_NAME = "todo-completed-file";
+
+let localCompletedFileLock = Promise.resolve();
 
 export async function getCompletedFileStatus() {
   const handle = await getCompletedFileHandle();
@@ -30,13 +33,15 @@ export async function pickCompletedJsonFile(options = {}) {
     const [handle] = await globalThis.showOpenFilePicker(filePickerOptions(options));
     const permission = await ensureFilePermission(handle, "readwrite", { allowRequest: true });
     if (!permission.ok) return permission;
-    const result = await readCompletedDataForHandle(handle, { includeRawText: true });
-    if (!result.ok) return result;
-    const writeResult = await writeTextForHandle(handle, result.rawText);
-    if (!writeResult.ok) return writeResult;
-    const bindResult = await saveCompletedFileHandle(handle);
-    if (!bindResult.ok) return bindResult;
-    return { ok: true, data: result.data, fileName: result.fileName };
+    return withCompletedFileLock(async () => {
+      const result = await readCompletedDataForHandle(handle, { includeRawText: true });
+      if (!result.ok) return result;
+      const writeResult = await writeTextForHandle(handle, result.rawText);
+      if (!writeResult.ok) return writeResult;
+      const bindResult = await saveCompletedFileHandle(handle);
+      if (!bindResult.ok) return bindResult;
+      return { ok: true, data: result.data, fileName: result.fileName };
+    });
   } catch (error) {
     return failure("picker_cancelled", error?.message || "No completed JSON file was selected");
   }
@@ -52,11 +57,13 @@ export async function createCompletedJsonFile(options = {}) {
     });
     const permission = await ensureFilePermission(handle, "readwrite", { allowRequest: true });
     if (!permission.ok) return permission;
-    const result = await writeCompletedDataForHandle(handle, createEmptyCompletedData());
-    if (!result.ok) return result;
-    const bindResult = await saveCompletedFileHandle(handle);
-    if (!bindResult.ok) return bindResult;
-    return result;
+    return withCompletedFileLock(async () => {
+      const result = await writeCompletedDataForHandle(handle, createEmptyCompletedData());
+      if (!result.ok) return result;
+      const bindResult = await saveCompletedFileHandle(handle);
+      if (!bindResult.ok) return bindResult;
+      return result;
+    });
   } catch (error) {
     return failure("picker_cancelled", error?.message || "No completed JSON file was created");
   }
@@ -69,8 +76,7 @@ export async function requestCompletedFilePermission(mode = "readwrite") {
 }
 
 export async function readCompletedData() {
-  const handle = await getCompletedFileHandle();
-  return readCompletedDataForHandle(handle);
+  return withCompletedFileLock(async () => readCompletedDataForHandle(await getCompletedFileHandle()));
 }
 
 async function readCompletedDataForHandle(handle, options = {}) {
@@ -95,8 +101,7 @@ async function readCompletedDataForHandle(handle, options = {}) {
 }
 
 export async function writeCompletedData(data) {
-  const handle = await getCompletedFileHandle();
-  return writeCompletedDataForHandle(handle, data);
+  return withCompletedFileLock(async () => writeCompletedDataForHandle(await getCompletedFileHandle(), data));
 }
 
 async function writeCompletedDataForHandle(handle, data) {
@@ -121,9 +126,16 @@ async function writeTextForHandle(handle, text) {
 }
 
 export async function appendCompletedRecordToFile(text, completedAt) {
-  const result = await readCompletedData();
-  if (!result.ok) return result;
-  return writeCompletedData(appendCompletedRecord(result.data, text, completedAt));
+  return mutateCompletedData((data) => appendCompletedRecord(data, text, completedAt));
+}
+
+export async function mutateCompletedData(mutator) {
+  return withCompletedFileLock(async () => {
+    const handle = await getCompletedFileHandle();
+    const result = await readCompletedDataForHandle(handle);
+    if (!result.ok) return result;
+    return writeCompletedDataForHandle(handle, mutator(result.data));
+  });
 }
 
 async function saveCompletedFileHandle(handle) {
@@ -199,6 +211,16 @@ function chromeStorageGet(key) {
   });
 }
 
+function withCompletedFileLock(operation) {
+  if (globalThis.navigator?.locks?.request) {
+    return globalThis.navigator.locks.request(COMPLETED_LOCK_NAME, operation);
+  }
+
+  const task = localCompletedFileLock.then(operation, operation);
+  localCompletedFileLock = task.catch(() => {});
+  return task;
+}
+
 function chromeStorageSet(value) {
   return new Promise((resolve, reject) => {
     if (!globalThis.chrome?.storage?.local) return resolve();
@@ -255,8 +277,11 @@ function getFromStore(db, key) {
 
 function putInStore(db, key, value) {
   return new Promise((resolve, reject) => {
-    const request = db.transaction(HANDLE_STORE, "readwrite").objectStore(HANDLE_STORE).put(value, key);
-    request.onsuccess = () => resolve();
+    const transaction = db.transaction(HANDLE_STORE, "readwrite");
+    const request = transaction.objectStore(HANDLE_STORE).put(value, key);
     request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || request.error);
+    transaction.onabort = () => reject(transaction.error || request.error);
   });
 }

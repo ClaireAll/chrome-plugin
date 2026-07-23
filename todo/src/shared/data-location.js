@@ -1,5 +1,6 @@
 import {
   getCompletedFileStatus,
+  mutateCompletedData as mutateLocalCompletedData,
   readCompletedData as readLocalCompletedData,
   writeCompletedData as writeLocalCompletedData,
   appendCompletedRecordToFile
@@ -29,15 +30,13 @@ export async function appendCompletedRecord(record) {
 }
 
 export async function updateCompletedRecord(recordIndex, text) {
-  const result = await readCompletedData();
-  if (!result.ok) return result;
-  return writeCompletedData(updateCompletedRecordText(result.data, recordIndex, text));
+  if (await isRemoteMode()) return failure("unsupported_remote", "Remote completed data is not supported");
+  return mutateLocalCompletedData((data) => updateCompletedRecordText(data, recordIndex, text));
 }
 
 export async function deleteCompletedRecordAt(recordIndex) {
-  const result = await readCompletedData();
-  if (!result.ok) return result;
-  return writeCompletedData(deleteCompletedRecord(result.data, recordIndex));
+  if (await isRemoteMode()) return failure("unsupported_remote", "Remote completed data is not supported");
+  return mutateLocalCompletedData((data) => deleteCompletedRecord(data, recordIndex));
 }
 
 async function isRemoteMode() {

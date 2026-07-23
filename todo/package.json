@@ -1,0 +1,10 @@
+{
+  "name": "todo-chrome-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/background/service-worker.js && node --check src/content/content.js && node --check src/options/options.js && node --check src/shared/messages.js"
+  }
+}

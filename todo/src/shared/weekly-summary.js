@@ -29,8 +29,8 @@ export function buildWeeklySummary(records, anchorDate = new Date()) {
     const completedAt = new Date(record?.completedAt);
     if (!record?.text || Number.isNaN(completedAt.getTime()) || completedAt < start || completedAt > end) continue;
 
-    const day = WEEKDAYS.find((item) => item.jsDay === completedAt.getUTCDay());
-    const hour = `${String(completedAt.getUTCHours()).padStart(2, "0")}:00`;
+    const day = WEEKDAYS.find((item) => item.jsDay === completedAt.getDay());
+    const hour = `${String(completedAt.getHours()).padStart(2, "0")}:00`;
     const key = `${hour}|${day.key}`;
     const cell = cells[key] || { tasks: [], count: 0 };
     cell.tasks.push(record.text);

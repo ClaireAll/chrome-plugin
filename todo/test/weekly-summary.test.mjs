@@ -12,9 +12,9 @@ test("week range starts Monday and ends Sunday in local time", () => {
 test("weekly summary uses only occupied hours and adds weekend columns only when needed", () => {
   const summary = buildWeeklySummary(
     [
-      { text: "Monday task", completedAt: "2026-07-20T09:30:00.000Z" },
-      { text: "Friday task", completedAt: "2026-07-24T14:00:00.000Z" },
-      { text: "Saturday task", completedAt: "2026-07-25T21:00:00.000Z" }
+      { text: "Monday task", completedAt: "2026-07-20T09:30:00" },
+      { text: "Friday task", completedAt: "2026-07-24T14:00:00" },
+      { text: "Saturday task", completedAt: "2026-07-25T21:00:00" }
     ],
     new Date("2026-07-23T12:00:00")
   );

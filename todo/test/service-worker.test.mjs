@@ -99,34 +99,74 @@ test("late alarm marks todo without creating a notification", async () => {
   assert.equal(chromeStub.notificationCalls, 0);
 });
 
-test("notification click handler is a no-op", async () => {
+test("on-time alarm creates a notification with the packaged icon", async () => {
+  const chromeStub = createChromeStub();
+  globalThis.chrome = chromeStub.chrome;
+  const worker = await import(`../src/background/service-worker.js?test=${Date.now()}-on-time-alarm`);
+
+  chromeStub.values.todoUnfinishedItems = [{
+    id: "a",
+    text: "Task A",
+    color: "#fff",
+    reminderAt: "2026-07-23T09:00:00.000Z",
+    reminded: false
+  }];
+
+  await worker.handleAlarm(
+    { name: "todo-reminder:a" },
+    "2026-07-23T09:01:00.000Z"
+  );
+
+  assert.deepEqual(chromeStub.notificationPayload, {
+    type: "basic",
+    iconUrl: "icons/icon-128.png",
+    title: "Todo reminder",
+    message: "Task A"
+  });
+});
+
+test("notification click handler has no alarm, storage, runtime, or notification side effects", async () => {
   const chromeStub = createChromeStub();
   globalThis.chrome = chromeStub.chrome;
   await import(`../src/background/service-worker.js?test=${Date.now()}-notification-click`);
 
   assert.equal(typeof chromeStub.notificationClick, "function");
   assert.doesNotThrow(() => chromeStub.notificationClick("todo-reminder:a"));
+  assert.equal(chromeStub.alarmCreateCalls, 0);
+  assert.equal(chromeStub.clearCalls, 0);
+  assert.equal(chromeStub.storageGetCalls, 0);
+  assert.equal(chromeStub.storageSetCalls, 0);
+  assert.equal(chromeStub.runtimeOpenOptionsCalls, 0);
   assert.equal(chromeStub.notificationCalls, 0);
 });
 
 function createChromeStub() {
   const values = {};
   let notificationClick;
-  const runtime = { lastError: null, onMessage: { addListener() {} } };
+  const runtime = {
+    lastError: null,
+    onMessage: { addListener() {} },
+    openOptionsPage() {
+      stub._runtimeOpenOptionsCalls = (stub._runtimeOpenOptionsCalls || 0) + 1;
+    }
+  };
   const stub = { values };
 
   stub.chrome = {
     runtime,
     alarms: {
-      create() {},
+      create() {
+        stub._alarmCreateCalls = (stub._alarmCreateCalls || 0) + 1;
+      },
       clear() {
         stub._clearCalls = (stub._clearCalls || 0) + 1;
       },
       onAlarm: { addListener() {} }
     },
     notifications: {
-      create() {
+      create(_id, payload) {
         stub._notificationCalls = (stub._notificationCalls || 0) + 1;
+        stub._notificationPayload = payload;
       },
       onClicked: {
         addListener(callback) {
@@ -137,12 +177,14 @@ function createChromeStub() {
     storage: {
       local: {
         get(key, callback) {
+          stub._storageGetCalls = (stub._storageGetCalls || 0) + 1;
           const result = Array.isArray(key)
             ? Object.fromEntries(key.map((name) => [name, values[name]]))
             : { [key]: values[key] };
           callback(result);
         },
         set(value, callback) {
+          stub._storageSetCalls = (stub._storageSetCalls || 0) + 1;
           Object.assign(values, value);
           callback?.();
         }
@@ -151,9 +193,14 @@ function createChromeStub() {
   };
 
   Object.defineProperties(stub, {
+    alarmCreateCalls: { get: () => stub._alarmCreateCalls || 0 },
     clearCalls: { get: () => stub._clearCalls || 0 },
     notificationCalls: { get: () => stub._notificationCalls || 0 },
-    notificationClick: { get: () => notificationClick }
+    notificationClick: { get: () => notificationClick },
+    notificationPayload: { get: () => stub._notificationPayload },
+    runtimeOpenOptionsCalls: { get: () => stub._runtimeOpenOptionsCalls || 0 },
+    storageGetCalls: { get: () => stub._storageGetCalls || 0 },
+    storageSetCalls: { get: () => stub._storageSetCalls || 0 }
   });
   return stub;
 }

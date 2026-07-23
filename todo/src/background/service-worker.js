@@ -107,7 +107,7 @@ export async function handleAlarm(alarm, handledAt = new Date().toISOString()) {
 
   await chrome.notifications.create(alarm.name, {
     type: "basic",
-    iconUrl: "icon.png",
+    iconUrl: "icons/icon-128.png",
     title: "Todo reminder",
     message: item.text
   });

@@ -57,3 +57,29 @@ No issues found within the Task 5 write scope. The focused tests cover the presc
 
 - Tests observe storage before append resolution and after both success and failure paths, and verify no alarm clear occurs on append failure.
 - No production change was necessary; the existing worker behavior satisfies the reviewed guarantees.
+
+## Re-review Follow-up: Notification Resource
+
+### Fixed
+
+- Added a real 128x128 PNG at `todo/icons/icon-128.png` and updated `chrome.notifications.create` to reference the packaged extension-relative path `icons/icon-128.png`.
+- Added an on-time alarm test that asserts the notification payload includes `iconUrl: "icons/icon-128.png"`.
+- Strengthened the notification-click no-op test to assert no alarm creation/clearing, storage reads/writes, runtime options opening, or notification creation.
+
+### Verification
+
+- `rtk npm test -- test/service-worker.test.mjs test/reminder-schedule.test.mjs test/service-worker-import.test.mjs`: exit 0; 9 passed, 0 failed.
+- `rtk npm run check`: exit 0; all syntax checks passed.
+- PNG verification: `128x128`; `rtk git diff --check`: exit 0.
+
+### Files Changed
+
+- `todo/src/background/service-worker.js`
+- `todo/test/service-worker.test.mjs`
+- `todo/icons/icon-128.png`
+- `.superpowers/sdd/task-5-report.md`
+
+### Self-review
+
+- The notification path now resolves to a file packaged inside the extension and is covered by a direct payload assertion.
+- The click handler remains intentionally empty, with the test checking every relevant Chrome API side-effect counter.

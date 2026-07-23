@@ -19,6 +19,7 @@ const elements = {
 };
 
 let completedData = { completed: [] };
+let completedStatus = null;
 let settings = { colorPresets: [] };
 let chart = null;
 
@@ -58,16 +59,20 @@ function renderCompletedRecords() {
     input.value = record.text;
     input.setAttribute("aria-label", "完成任务文本");
     input.addEventListener("change", async () => {
-      const result = await sendMessage(MESSAGE_TYPES.UPDATE_COMPLETED_RECORD, { recordIndex: record.recordIndex, text: input.value });
-      if (result.ok) await refreshCompletedData();
+      await handleCompletedMutation(
+        () => sendMessage(MESSAGE_TYPES.UPDATE_COMPLETED_RECORD, { recordIndex: record.recordIndex, text: input.value }),
+        "完成记录保存失败"
+      );
     });
     const time = document.createElement("time");
     time.className = "completed-time";
     time.dateTime = record.completedAt;
     time.textContent = new Date(record.completedAt).toLocaleString();
     row.append(input, time, createButton("删除", "icon-button", async () => {
-      const result = await sendMessage(MESSAGE_TYPES.DELETE_COMPLETED_RECORD, { recordIndex: record.recordIndex });
-      if (result.ok) await refreshCompletedData();
+      await handleCompletedMutation(
+        () => sendMessage(MESSAGE_TYPES.DELETE_COMPLETED_RECORD, { recordIndex: record.recordIndex }),
+        "完成记录删除失败"
+      );
     }));
     elements.completedList.append(row);
   }
@@ -115,17 +120,33 @@ function renderWeeklySummary() {
   chart.resize();
 }
 
-async function refreshCompletedData() {
-  const result = await sendMessage(MESSAGE_TYPES.READ_COMPLETED_DATA);
+async function refreshCompletedData(statusOverride = "") {
+  const result = await sendMessage(MESSAGE_TYPES.READ_COMPLETED_DATA).catch((error) => ({
+    ok: false,
+    message: error?.message || "无法读取完成记录文件"
+  }));
   if (!result.ok) {
     completedData = { completed: [] };
     elements.completedFileStatus.textContent = result.message || "未绑定完成记录文件";
   } else {
     completedData = result.data;
-    elements.completedFileStatus.textContent = result.fileName || "已加载完成记录文件";
+    elements.completedFileStatus.textContent = statusOverride || completedFileStatusText(result.fileName);
   }
   renderCompletedRecords();
   renderWeeklySummary();
+}
+
+async function handleCompletedMutation(operation, fallbackMessage) {
+  try {
+    const result = await operation();
+    if (result?.ok) {
+      await refreshCompletedData();
+      return;
+    }
+    await refreshCompletedData(result?.message || fallbackMessage);
+  } catch (error) {
+    await refreshCompletedData(error?.message || fallbackMessage);
+  }
 }
 
 async function showCompletedFileResult(result) {
@@ -140,11 +161,18 @@ async function refreshState() {
   const state = await sendMessage(MESSAGE_TYPES.GET_STATE);
   if (state.ok) {
     settings = state.settings;
-    const status = state.completedStatus;
-    if (status?.fileName) elements.completedFileStatus.textContent = `${status.fileName} (${status.permission})`;
+    completedStatus = state.completedStatus || null;
+    if (completedStatus?.fileName) elements.completedFileStatus.textContent = completedFileStatusText(completedStatus.fileName);
   }
   renderColorPresets();
   await refreshCompletedData();
+}
+
+function completedFileStatusText(fileName) {
+  const name = fileName || completedStatus?.fileName || "已加载完成记录文件";
+  return completedStatus?.permission && completedStatus.fileName === fileName
+    ? `${name} (${completedStatus.permission})`
+    : name;
 }
 
 elements.completedSearch.addEventListener("input", renderCompletedRecords);
@@ -158,7 +186,8 @@ elements.createCompletedFile.addEventListener("click", async () => {
 });
 elements.requestCompletedPermission.addEventListener("click", async () => {
   const result = await requestCompletedFilePermission();
-  elements.completedFileStatus.textContent = result.ok ? "权限已授予" : result.message;
+  if (result.ok) await refreshState();
+  else elements.completedFileStatus.textContent = result.message;
 });
 elements.addColorPreset.addEventListener("click", () => {
   const color = globalThis.prompt("颜色值", "#ffffff");

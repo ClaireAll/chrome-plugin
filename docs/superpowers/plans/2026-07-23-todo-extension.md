@@ -1056,7 +1056,7 @@ When clearing, deleting, or completing a todo:
 await chrome.alarms.clear(alarmNameForTodo(id));
 ```
 
-`handleAlarm` must mark late reminders as `reminded: true` without creating a notification.
+`handleAlarm` must ignore early or late reminders without creating a notification or marking them reminded.
 
 - [ ] **Step 5: Add worker files to syntax check**
 

@@ -31,23 +31,50 @@ test("storage reads and writes normalized todo state through chrome.storage.loca
   assert.equal(Array.isArray(state.settings.colorPresets), true);
 });
 
-function createChromeStorage(initial = {}) {
+test("loadTodoItems rejects when storage get reports lastError", async () => {
+  const error = { message: "storage get failed" };
+  const stub = createChromeStorage({}, { get: error });
+  globalThis.chrome = stub.chrome;
+  const storage = await import(`../src/shared/storage.js?test=${Date.now()}-storage-get-error`);
+
+  await assert.rejects(storage.loadTodoItems(), (reason) => reason === error);
+});
+
+test("saveTodoItems rejects when storage set reports lastError", async () => {
+  const error = { message: "storage set failed" };
+  const stub = createChromeStorage({}, { set: error });
+  globalThis.chrome = stub.chrome;
+  const storage = await import(`../src/shared/storage.js?test=${Date.now()}-storage-set-error`);
+
+  await assert.rejects(storage.saveTodoItems([]), (reason) => reason === error);
+});
+
+function createChromeStorage(initial = {}, errors = {}) {
   const values = { ...initial };
+  const runtime = { lastError: null };
+
+  function withLastError(error, callback, value) {
+    runtime.lastError = error ?? null;
+    callback?.(value);
+    runtime.lastError = null;
+  }
+
   return {
     values,
     chrome: {
+      runtime,
       storage: {
         local: {
           get(key, callback) {
             if (Array.isArray(key)) {
-              callback(Object.fromEntries(key.map((name) => [name, values[name]])));
+              withLastError(errors.get, callback, Object.fromEntries(key.map((name) => [name, values[name]])));
               return;
             }
-            callback({ [key]: values[key] });
+            withLastError(errors.get, callback, { [key]: values[key] });
           },
           set(value, callback) {
             Object.assign(values, value);
-            callback?.();
+            withLastError(errors.set, callback);
           }
         }
       }

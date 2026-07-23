@@ -364,21 +364,29 @@
 
   function positionPanel() {
     const ballRect = shell.getBoundingClientRect();
-    const maxLeft = Math.max(PANEL_VIEWPORT_MARGIN, window.innerWidth - PANEL_WIDTH - PANEL_VIEWPORT_MARGIN);
-    const maxTop = Math.max(PANEL_VIEWPORT_MARGIN, window.innerHeight - PANEL_HEIGHT - PANEL_VIEWPORT_MARGIN);
+    const { width: panelWidth, height: panelHeight } = getEffectivePanelDimensions();
+    const maxLeft = Math.max(PANEL_VIEWPORT_MARGIN, window.innerWidth - panelWidth - PANEL_VIEWPORT_MARGIN);
+    const maxTop = Math.max(PANEL_VIEWPORT_MARGIN, window.innerHeight - panelHeight - PANEL_VIEWPORT_MARGIN);
     const ballRight = Number.isFinite(ballRect.right) ? ballRect.right : ballRect.left + ballRect.width;
     const ballBottom = Number.isFinite(ballRect.bottom) ? ballRect.bottom : ballRect.top + ballRect.height;
-    const top = ballBottom + PANEL_VIEWPORT_MARGIN + PANEL_HEIGHT <= window.innerHeight - PANEL_VIEWPORT_MARGIN
+    const top = ballBottom + PANEL_VIEWPORT_MARGIN + panelHeight <= window.innerHeight - PANEL_VIEWPORT_MARGIN
       ? ballBottom + PANEL_VIEWPORT_MARGIN
-      : ballRect.top - PANEL_VIEWPORT_MARGIN - PANEL_HEIGHT >= PANEL_VIEWPORT_MARGIN
-        ? ballRect.top - PANEL_VIEWPORT_MARGIN - PANEL_HEIGHT
-        : clamp(ballRect.top - (PANEL_HEIGHT - ballRect.height) / 2, PANEL_VIEWPORT_MARGIN, maxTop);
-    const left = clamp(ballRight - PANEL_WIDTH, PANEL_VIEWPORT_MARGIN, maxLeft);
+      : ballRect.top - PANEL_VIEWPORT_MARGIN - panelHeight >= PANEL_VIEWPORT_MARGIN
+        ? ballRect.top - PANEL_VIEWPORT_MARGIN - panelHeight
+        : clamp(ballRect.top - (panelHeight - ballRect.height) / 2, PANEL_VIEWPORT_MARGIN, maxTop);
+    const left = clamp(ballRight - panelWidth, PANEL_VIEWPORT_MARGIN, maxLeft);
     panel.style.position = "fixed";
     panel.style.left = `${left}px`;
     panel.style.top = `${top}px`;
     panel.style.right = "auto";
     panel.style.bottom = "auto";
+  }
+
+  function getEffectivePanelDimensions() {
+    return {
+      width: Math.max(0, Math.min(PANEL_WIDTH, window.innerWidth - PANEL_VIEWPORT_MARGIN * 2)),
+      height: Math.max(0, Math.min(PANEL_HEIGHT, window.innerHeight - PANEL_VIEWPORT_MARGIN * 2))
+    };
   }
 
   function applyBallPosition(position) {

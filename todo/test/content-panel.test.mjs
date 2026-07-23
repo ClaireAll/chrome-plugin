@@ -37,6 +37,36 @@ test("panel opens fully inside an ordinary viewport", async () => {
   assert.ok(top + 560 <= context.window.innerHeight - 12);
 });
 
+test("panel fits within a narrow viewport", async () => {
+  const { context, document } = createContentContext({ innerWidth: 400 });
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+  document.elements[".todo-ball"].dispatch("click", {});
+  await delay(0);
+
+  const left = Number.parseInt(document.elements[".todo-panel"].style.left, 10);
+  assert.ok(left >= 12);
+  assert.ok(left + 376 <= context.window.innerWidth - 12);
+});
+
+test("panel fits within a short viewport", async () => {
+  const { context, document } = createContentContext({ innerHeight: 500 });
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+  document.elements[".todo-ball"].dispatch("click", {});
+  await delay(0);
+
+  const top = Number.parseInt(document.elements[".todo-panel"].style.top, 10);
+  assert.ok(top >= 12);
+  assert.ok(top + 476 <= context.window.innerHeight - 12);
+});
+
 test("clicking the ball does not snap it but dragging does", async () => {
   const { context, messages, document } = createContentContext();
 
@@ -71,17 +101,18 @@ test("closing the panel persists a local reorder", async () => {
   document.elements[".todo-ball"].dispatch("click", {});
   await delay(0);
 
-  const source = createTodoTarget("a", document.elements[".todo-list"]);
-  const target = createTodoTarget("b", document.elements[".todo-list"]);
+  const source = createTodoTarget("b", document.elements[".todo-list"]);
+  const target = createTodoTarget("a", document.elements[".todo-list"]);
   document.elements[".todo-list"].dispatch("dragstart", { target: source, dataTransfer: { setData() {} } });
   document.elements[".todo-list"].dispatch("drop", { target, clientY: 0, preventDefault() {} });
   document.elements[".todo-ball"].dispatch("click", {});
   await delay(0);
 
   const reorder = messages.find((message) => message.type === "TODO_REORDER_TODOS");
-  assert.equal(reorder?.payload.sourceId, "a");
-  assert.equal(reorder?.payload.targetId, "b");
+  assert.equal(reorder?.payload.sourceId, "b");
+  assert.equal(reorder?.payload.targetId, "a");
   assert.equal(reorder?.payload.position, "before");
+  assert.ok(document.elements[".todo-list"].innerHTML.indexOf("Task B") < document.elements[".todo-list"].innerHTML.indexOf("Task A"));
 });
 
 test("complete keeps the item when JSON is not bound", async () => {
@@ -112,7 +143,7 @@ test("complete keeps the item when JSON is not bound", async () => {
 
 function createContentContext(options = {}) {
   const document = createDocumentStub();
-  let items = options.items || [];
+  let backgroundItems = options.items || [];
   const messages = [];
   const context = {
     chrome: {
@@ -121,21 +152,29 @@ function createContentContext(options = {}) {
         sendMessage(message, callback) {
           messages.push(message);
           if (message.type === "TODO_GET_STATE") {
-            callback({ ok: true, items, settings: { colorPresets: ["#ffffff"] } });
+            callback({ ok: true, items: [...backgroundItems], settings: { colorPresets: ["#ffffff"] } });
             return;
           }
           if (message.type === "TODO_COMPLETE_TODO") {
             options.onComplete?.(message);
-            callback(options.completeResponse || { ok: true, items: items.filter((item) => item.id !== message.payload.id) });
+            callback(options.completeResponse || { ok: true, items: backgroundItems.filter((item) => item.id !== message.payload.id) });
             return;
           }
-          callback({ ok: true, items });
+          if (message.type === "TODO_REORDER_TODOS") {
+            const sourceIndex = backgroundItems.findIndex((item) => item.id === message.payload.sourceId);
+            const [moved] = backgroundItems.splice(sourceIndex, 1);
+            const targetIndex = backgroundItems.findIndex((item) => item.id === message.payload.targetId);
+            backgroundItems.splice(targetIndex + (message.payload.position === "after" ? 1 : 0), 0, moved);
+            callback({ ok: true, items: [...backgroundItems] });
+            return;
+          }
+          callback({ ok: true, items: [...backgroundItems] });
         }
       }
     },
     document,
     location: { href: "https://example.com/page" },
-    window: { innerWidth: 1200, innerHeight: 800, addEventListener() {}, setTimeout, clearTimeout },
+    window: { innerWidth: options.innerWidth || 1200, innerHeight: options.innerHeight || 800, addEventListener() {}, setTimeout, clearTimeout },
     setTimeout,
     clearTimeout,
     console,

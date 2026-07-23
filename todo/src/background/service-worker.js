@@ -100,6 +100,10 @@ async function handleAlarmNow(alarm, handledAt) {
   const item = items.find((todo) => todo.id === id);
   if (!item?.reminderAt || item.reminded) return;
   if (alarm?.scheduledTime !== Date.parse(item.reminderAt)) return;
+  if (isLateReminder(item.reminderAt, handledAt)) {
+    await saveTodoItems(markTodoReminded(items, id, handledAt));
+    return;
+  }
   if (!isReminderOnTime(item.reminderAt, handledAt)) return;
 
   await chrome.notifications.create(alarm.name, {
@@ -283,4 +287,10 @@ async function countCompletedRecords(receipt) {
     ok: true,
     count: completed.filter((record) => record.text === receipt.text && record.completedAt === receipt.completedAt).length
   };
+}
+
+function isLateReminder(reminderAt, handledAt, graceMs = 120000) {
+  const reminderTime = Date.parse(reminderAt);
+  const handledTime = Date.parse(handledAt);
+  return Number.isFinite(reminderTime) && Number.isFinite(handledTime) && handledTime - reminderTime > graceMs;
 }

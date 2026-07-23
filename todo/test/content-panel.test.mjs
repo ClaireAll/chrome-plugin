@@ -198,8 +198,41 @@ test("complete keeps the item when JSON is not bound", async () => {
   assert.match(document.elements[".todo-toast"].textContent, /JSON/);
 });
 
+test("error toast is clamped into the viewport when the ball is near the lower-left edge", async () => {
+  const { context, document } = createContentContext({
+    innerWidth: 320,
+    innerHeight: 220,
+    rects: {
+      ".todo-shell": { left: 0, top: 180, width: 48, height: 48, right: 48, bottom: 228 },
+      ".todo-toast": { left: 0, top: 0, width: 300, height: 44, right: 300, bottom: 44 }
+    },
+    items: [{ id: "a", text: "Task A" }],
+    completeResponse: { ok: false, reason: "missing_file", message: "No completed JSON file is bound" }
+  });
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+  document.elements[".todo-ball"].dispatch("click", {});
+  await delay(0);
+
+  const completeButton = createActionTarget("todo-action-complete", { todoId: "a" }, document.elements[".todo-list"]);
+  document.elements[".todo-list"].dispatch("click", { target: completeButton });
+  await delay(0);
+
+  const toast = document.elements[".todo-toast"];
+  const left = Number.parseInt(toast.style.left, 10);
+  const top = Number.parseInt(toast.style.top, 10);
+  assert.equal(toast.style.position, "fixed");
+  assert.ok(left >= 12);
+  assert.ok(left + 296 <= context.window.innerWidth - 12);
+  assert.ok(top >= 12);
+  assert.ok(top + 44 <= context.window.innerHeight - 12);
+});
+
 function createContentContext(options = {}) {
-  const document = createDocumentStub();
+  const document = createDocumentStub(options);
   let backgroundItems = options.items || [];
   const messages = [];
   let storageChangeListener;
@@ -271,10 +304,10 @@ function createContentContext(options = {}) {
   };
 }
 
-function createDocumentStub() {
+function createDocumentStub(options = {}) {
   const elements = Object.fromEntries([
     ".todo-shell", ".todo-ball", ".todo-panel", ".todo-create-form", ".todo-create-input", ".todo-list", ".todo-toast"
-  ].map((selector) => [selector, new ElementStub("div", null)]));
+  ].map((selector) => [selector, new ElementStub("div", null, selector, options.rects || {})]));
   for (const element of Object.values(elements)) element.elements = elements;
   elements[".todo-panel"].hidden = true;
   elements[".todo-toast"].hidden = true;
@@ -289,9 +322,11 @@ function createDocumentStub() {
 }
 
 class ElementStub {
-  constructor(tagName, elements) {
+  constructor(tagName, elements, selector = "", rects = {}) {
     this.tagName = tagName;
     this.elements = elements || {};
+    this.selector = selector;
+    this.rects = rects;
     this.dataset = {};
     this.listeners = {};
     this.style = { setProperty() {} };
@@ -304,7 +339,7 @@ class ElementStub {
 
   set innerHTML(value) { this.innerHTMLValue = value; }
   get innerHTML() { return this.innerHTMLValue; }
-  querySelector(selector) { return this.elements[selector] || new ElementStub("div", this.elements); }
+  querySelector(selector) { return this.elements[selector] || new ElementStub("div", this.elements, selector, this.rects); }
   contains(target) { return target === this || target?.parentNode === this; }
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
   dispatch(type, event = {}) { for (const listener of this.listeners[type] || []) listener(event); }
@@ -312,7 +347,9 @@ class ElementStub {
   select() {}
   setPointerCapture() {}
   releasePointerCapture() {}
-  getBoundingClientRect() { return { left: 0, top: 0, width: 48, height: 48 }; }
+  getBoundingClientRect() {
+    return this.rects[this.selector] || { left: 0, top: 0, width: 48, height: 48, right: 48, bottom: 48 };
+  }
 }
 
 function createActionTarget(className, dataset, parentNode) {

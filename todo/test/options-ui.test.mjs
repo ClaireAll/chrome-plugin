@@ -45,7 +45,8 @@ test("options page reports picker and creation failures in the completed-file st
 test("options page refreshes file status after picker and creation successes", () => {
   const source = readFileSync("src/options/options.js", "utf8");
 
-  assert.match(source, /function showCompletedFileResult\(result\)[\s\S]*if \(result\.ok\) \{[\s\S]*await refreshState\(\)/);
+  assert.match(source, /function showCompletedFileResult\(result\)[\s\S]*if \(result\.ok\) \{[\s\S]*applyCompletedStatus\(result\)[\s\S]*await refreshCompletedData\(\)/);
+  assert.doesNotMatch(source, /function showCompletedFileResult\(result\)[\s\S]*if \(result\.ok\) \{[\s\S]*await refreshState\(\)/);
 });
 
 test("options page sends color preset changes as a narrow settings patch", () => {
@@ -120,6 +121,12 @@ test("completed file status keeps prompt permission when completed data cannot b
   });
 
   assert.equal(page.elements.completedFileStatus.textContent, "completed.json (prompt)");
+});
+
+test("permission success updates status before any later refresh can fail", () => {
+  const source = readFileSync("src/options/options.js", "utf8");
+
+  assert.match(source, /elements\.requestCompletedPermission\.addEventListener\("click", async \(\) => \{[\s\S]*if \(result\.ok\) \{[\s\S]*applyCompletedStatus\(result\)[\s\S]*await refreshCompletedData\(\)/);
 });
 
 async function loadOptionsPage(t, overrides = {}) {

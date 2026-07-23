@@ -150,21 +150,30 @@ async function handleCompletedMutation(operation, fallbackMessage) {
 
 async function showCompletedFileResult(result) {
   if (result.ok) {
-    await refreshState();
+    applyCompletedStatus(result);
+    await refreshCompletedData();
     return;
   }
   elements.completedFileStatus.textContent = result.message || "Completed JSON file operation failed";
 }
 
 async function refreshState() {
-  const state = await sendMessage(MESSAGE_TYPES.GET_STATE);
+  const state = await sendMessage(MESSAGE_TYPES.GET_STATE).catch(() => ({ ok: false }));
   if (state.ok) {
     settings = state.settings;
-    completedStatus = state.completedStatus || null;
-    if (completedStatus?.fileName) elements.completedFileStatus.textContent = completedFileStatusText(completedStatus.fileName);
+    applyCompletedStatus(state.completedStatus);
   }
   renderColorPresets();
   await refreshCompletedData();
+}
+
+function applyCompletedStatus(status) {
+  if (!status?.fileName) return;
+  completedStatus = {
+    fileName: status.fileName,
+    permission: status.permission || completedStatus?.permission || ""
+  };
+  elements.completedFileStatus.textContent = completedFileStatusText(completedStatus.fileName);
 }
 
 function completedFileStatusText(fileName) {
@@ -186,7 +195,10 @@ elements.createCompletedFile.addEventListener("click", async () => {
 });
 elements.requestCompletedPermission.addEventListener("click", async () => {
   const result = await requestCompletedFilePermission();
-  if (result.ok) await refreshState();
+  if (result.ok) {
+    applyCompletedStatus(result);
+    await refreshCompletedData();
+  }
   else elements.completedFileStatus.textContent = result.message;
 });
 elements.addColorPreset.addEventListener("click", () => {

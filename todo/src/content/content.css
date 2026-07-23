@@ -154,9 +154,8 @@
 }
 
 #todo-extension-root .todo-toast {
-  position: absolute;
-  right: 0;
-  bottom: -52px;
+  position: fixed;
+  box-sizing: border-box;
   width: 300px;
   padding: 10px 12px;
   border-radius: 5px;

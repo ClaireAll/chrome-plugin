@@ -206,7 +206,8 @@ Closing the panel persists any pending drag-sort order.
 - After showing the notification, the item is marked `reminded: true`.
 - Clicking the notification performs no action.
 - A reminder is considered on time only if the alarm handler runs no more than two minutes after `reminderAt`; this absorbs small scheduler delays without creating late backfill.
-- If Chrome was not running, the computer was asleep, or the handler runs more than two minutes early or late, the extension ignores that alarm and leaves the todo eligible for a matching alarm.
+- If the handler runs before `reminderAt`, the extension ignores that alarm and leaves the todo eligible for a matching alarm.
+- If Chrome was not running, the computer was asleep, or the handler runs more than two minutes late, the extension marks the todo as `reminded: true` without showing a notification.
 
 When a reminder is edited or cleared, the old alarm is cleared and the new state is saved.
 

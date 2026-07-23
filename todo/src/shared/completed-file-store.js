@@ -40,7 +40,7 @@ export async function pickCompletedJsonFile(options = {}) {
       if (!writeResult.ok) return writeResult;
       const bindResult = await saveCompletedFileHandle(handle);
       if (!bindResult.ok) return bindResult;
-      return { ok: true, data: result.data, fileName: result.fileName };
+      return { ok: true, data: result.data, fileName: result.fileName, permission: "granted" };
     });
   } catch (error) {
     return failure("picker_cancelled", error?.message || "No completed JSON file was selected");
@@ -62,7 +62,7 @@ export async function createCompletedJsonFile(options = {}) {
       if (!result.ok) return result;
       const bindResult = await saveCompletedFileHandle(handle);
       if (!bindResult.ok) return bindResult;
-      return result;
+      return { ...result, permission: "granted" };
     });
   } catch (error) {
     return failure("picker_cancelled", error?.message || "No completed JSON file was created");
@@ -72,7 +72,9 @@ export async function createCompletedJsonFile(options = {}) {
 export async function requestCompletedFilePermission(mode = "readwrite") {
   const handle = await getCompletedFileHandle();
   if (!handle) return failure("missing_file", "No completed JSON file is bound");
-  return ensureFilePermission(handle, mode, { allowRequest: true });
+  const permission = await ensureFilePermission(handle, mode, { allowRequest: true });
+  if (!permission.ok) return permission;
+  return { ok: true, fileName: handle.name, permission: "granted" };
 }
 
 export async function readCompletedData() {

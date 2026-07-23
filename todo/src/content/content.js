@@ -19,6 +19,9 @@
   const PANEL_WIDTH = 420;
   const PANEL_HEIGHT = 560;
   const PANEL_VIEWPORT_MARGIN = 12;
+  const TOAST_MAX_WIDTH = 300;
+  const TOAST_FALLBACK_HEIGHT = 44;
+  const TOAST_GAP = 8;
   const state = {
     items: [],
     settings: { colorPresets: DEFAULT_COLORS },
@@ -82,6 +85,7 @@
   window.addEventListener("resize", () => {
     persistClampedBallPosition();
     if (state.isOpen) positionPanel();
+    if (!toast.hidden) positionToast();
   });
   chrome.storage?.onChanged?.addListener((changes, areaName) => {
     if (areaName === "local" && (changes.todoUnfinishedItems || changes.todoSettings)) runSafely(refreshState());
@@ -456,8 +460,27 @@
   function showToast(message) {
     toast.textContent = String(message || "Operation failed");
     toast.hidden = false;
+    positionToast();
     window.clearTimeout?.(showToast.timer);
     showToast.timer = window.setTimeout?.(() => { toast.hidden = true; }, 4000);
+  }
+
+  function positionToast() {
+    const ballRect = shell.getBoundingClientRect();
+    const width = Math.max(0, Math.min(TOAST_MAX_WIDTH, window.innerWidth - PANEL_VIEWPORT_MARGIN * 2));
+    toast.style.position = "fixed";
+    toast.style.width = `${width}px`;
+    toast.style.right = "auto";
+    toast.style.bottom = "auto";
+    const toastRect = toast.getBoundingClientRect();
+    const height = Number.isFinite(toastRect.height) && toastRect.height > 0 ? toastRect.height : TOAST_FALLBACK_HEIGHT;
+    const maxLeft = Math.max(PANEL_VIEWPORT_MARGIN, window.innerWidth - width - PANEL_VIEWPORT_MARGIN);
+    const maxTop = Math.max(PANEL_VIEWPORT_MARGIN, window.innerHeight - height - PANEL_VIEWPORT_MARGIN);
+    const belowTop = ballRect.bottom + TOAST_GAP;
+    const aboveTop = ballRect.top - height - TOAST_GAP;
+    const top = belowTop + height <= window.innerHeight - PANEL_VIEWPORT_MARGIN ? belowTop : aboveTop;
+    toast.style.left = `${clamp(ballRect.left, PANEL_VIEWPORT_MARGIN, maxLeft)}px`;
+    toast.style.top = `${clamp(top, PANEL_VIEWPORT_MARGIN, maxTop)}px`;
   }
 
   function sendMessage(message) {

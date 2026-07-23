@@ -228,12 +228,22 @@ test("complete message preserves unfinished todo when append fails", async (t) =
   assert.equal(chromeStub.clearCalls, 0);
 });
 
-test("late and early alarms leave the todo eligible for a matching future alarm", async (t) => {
+test("late alarms mark the todo reminded without creating a notification", async (t) => {
   const chromeStub = installChromeStub(t);
-  const worker = await importWorker("invalid-timing");
+  const worker = await importWorker("late-alarm");
   chromeStub.values.todoUnfinishedItems = [reminderTodo()];
 
   await worker.handleAlarm(matchingAlarm(), "2026-07-23T09:02:01.000Z");
+
+  assert.equal(chromeStub.values.todoUnfinishedItems[0].reminded, true);
+  assert.equal(chromeStub.notificationCalls, 0);
+});
+
+test("early alarms leave the todo eligible for the matching future alarm", async (t) => {
+  const chromeStub = installChromeStub(t);
+  const worker = await importWorker("early-alarm");
+  chromeStub.values.todoUnfinishedItems = [reminderTodo()];
+
   await worker.handleAlarm(matchingAlarm(), "2026-07-23T08:59:59.000Z");
 
   assert.equal(chromeStub.values.todoUnfinishedItems[0].reminded, false);

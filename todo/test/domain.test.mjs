@@ -5,6 +5,7 @@ import {
   appendCompletedRecord,
   clearTodoReminder,
   createEmptyCompletedData,
+  createTodoItem,
   deleteCompletedRecord,
   deleteTodoItem,
   markTodoReminded,
@@ -35,6 +36,68 @@ test("todo items are normalized and empty text is removed", () => {
   assert.equal(items[0].color, "#badbad");
   assert.equal(items[0].reminderAt, "");
   assert.equal(items[0].reminded, false);
+});
+
+test("todo item dates are normalized with deterministic fallback order", () => {
+  const items = normalizeTodoItems([
+    {
+      id: "created-invalid",
+      text: "Created fallback",
+      createdAt: "bad",
+      updatedAt: "2026-07-23T08:00:00Z"
+    },
+    {
+      id: "updated-invalid",
+      text: "Updated fallback",
+      createdAt: "2026-07-23T09:00:00Z",
+      updatedAt: "bad"
+    },
+    {
+      id: "both-invalid",
+      text: "Now fallback",
+      createdAt: "bad",
+      updatedAt: "also bad"
+    }
+  ]);
+
+  assert.equal(items[0].createdAt, "2026-07-23T08:00:00.000Z");
+  assert.equal(items[0].updatedAt, "2026-07-23T08:00:00.000Z");
+  assert.equal(items[1].createdAt, "2026-07-23T09:00:00.000Z");
+  assert.equal(items[1].updatedAt, "2026-07-23T09:00:00.000Z");
+  assert.match(items[2].createdAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  assert.equal(items[2].createdAt, items[2].updatedAt);
+});
+
+test("createTodoItem normalizes direct input and reminder state", () => {
+  assert.deepEqual(createTodoItem("  New task  ", {
+    id: "new-task",
+    color: "#dcfce7",
+    reminderAt: "2026-07-23T10:00:00Z",
+    reminded: true
+  }, "2026-07-23T08:00:00Z"), {
+    id: "new-task",
+    text: "New task",
+    color: "#dcfce7",
+    reminderAt: "2026-07-23T10:00:00.000Z",
+    reminded: true,
+    createdAt: "2026-07-23T08:00:00.000Z",
+    updatedAt: "2026-07-23T08:00:00.000Z"
+  });
+});
+
+test("markTodoReminded preserves false when an item has no reminder", () => {
+  const items = [{
+    id: "no-reminder",
+    text: "No reminder",
+    reminderAt: "",
+    reminded: false,
+    createdAt: "2026-07-23T08:00:00Z",
+    updatedAt: "2026-07-23T08:00:00Z"
+  }];
+
+  const marked = markTodoReminded(items, "no-reminder", "2026-07-23T09:00:00Z");
+
+  assert.equal(marked[0].reminded, false);
 });
 
 test("todo mutations add, edit, color, reminder, remind, clear, delete, and reorder", () => {

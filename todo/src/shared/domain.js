@@ -39,13 +39,21 @@ export function normalizeTodoItems(input) {
   return source
     .map((item) => {
       const reminderAt = normalizeIsoDate(item?.reminderAt);
+      const validCreatedAt = normalizeIsoDate(item?.createdAt);
+      const validUpdatedAt = normalizeIsoDate(item?.updatedAt);
+      // Invalid createdAt falls back to valid updatedAt, then one shared current time; updatedAt mirrors that order.
+      const fallbackDate = new Date().toISOString();
+      const createdAt = validCreatedAt || validUpdatedAt || fallbackDate;
+      const updatedAt = validUpdatedAt || validCreatedAt || fallbackDate;
       return {
         ...item,
         id: String(item?.id || createId()),
         text: String(item?.text || "").trim(),
         color: String(item?.color || DEFAULT_COLOR_PRESETS[0]),
         reminderAt,
-        reminded: Boolean(item?.reminded) && Boolean(reminderAt)
+        reminded: Boolean(item?.reminded) && Boolean(reminderAt),
+        createdAt,
+        updatedAt
       };
     })
     .filter((item) => item.text);
@@ -92,7 +100,10 @@ export function clearTodoReminder(items, id, now = new Date().toISOString()) {
 }
 
 export function markTodoReminded(items, id, now = new Date().toISOString()) {
-  return updateTodo(items, id, (item) => ({ ...item, reminded: true, updatedAt: normalizeNow(now) }));
+  return updateTodo(items, id, (item) => {
+    if (!item.reminderAt) return item;
+    return { ...item, reminded: true, updatedAt: normalizeNow(now) };
+  });
 }
 
 export function deleteTodoItem(items, id) {

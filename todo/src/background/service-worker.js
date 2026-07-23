@@ -150,15 +150,38 @@ async function completeTodo(payload) {
 
   let receiptItems = items;
   let receipt = completionReceiptFor(item, payload.completedAt);
-  if (!item.completionReceipt || item.completionReceipt.completedAt !== receipt.completedAt || item.completionReceipt.appended !== receipt.appended) {
+  if (!item.completionReceipt ||
+    item.completionReceipt.completedAt !== receipt.completedAt ||
+    item.completionReceipt.appendStarted !== receipt.appendStarted ||
+    item.completionReceipt.appended !== receipt.appended) {
     receiptItems = withCompletionReceipt(items, item.id, receipt);
     await saveTodoItems(receiptItems);
   }
 
   if (!receipt.appended) {
-    const result = await completedStore().appendCompletedRecord({ text: item.text, completedAt: receipt.completedAt });
-    if (!result.ok) return result;
-    receipt = { ...receipt, appended: true };
+    let alreadyAppended = false;
+    if (item.completionReceipt?.appendStarted === true) {
+      const existingResult = await hasCompletedRecord(item, receipt);
+      if (!existingResult.ok) return existingResult;
+      alreadyAppended = existingResult.exists;
+    }
+
+    if (!alreadyAppended) {
+      if (!receipt.appendStarted) {
+        receipt = { ...receipt, appendStarted: true };
+        receiptItems = withCompletionReceipt(receiptItems, item.id, receipt);
+        await saveTodoItems(receiptItems);
+      }
+
+      const result = await completedStore().appendCompletedRecord({ text: item.text, completedAt: receipt.completedAt });
+      if (!result.ok) {
+        receipt = { ...receipt, appendStarted: false };
+        await saveTodoItems(withCompletionReceipt(receiptItems, item.id, receipt));
+        return result;
+      }
+    }
+
+    receipt = { ...receipt, appendStarted: true, appended: true };
     receiptItems = withCompletionReceipt(receiptItems, item.id, receipt);
     await saveTodoItems(receiptItems);
   }
@@ -194,12 +217,32 @@ function isMutationMessage(type) {
 function completionReceiptFor(item, completedAt) {
   const existing = item.completionReceipt;
   if (existing && Number.isFinite(Date.parse(existing.completedAt))) {
-    return { completedAt: new Date(existing.completedAt).toISOString(), appended: existing.appended === true };
+    return {
+      completedAt: new Date(existing.completedAt).toISOString(),
+      appendStarted: existing.appendStarted === true || existing.appended === true,
+      appended: existing.appended === true
+    };
   }
   const time = new Date(completedAt);
-  return { completedAt: Number.isNaN(time.getTime()) ? new Date().toISOString() : time.toISOString(), appended: false };
+  return {
+    completedAt: Number.isNaN(time.getTime()) ? new Date().toISOString() : time.toISOString(),
+    appendStarted: false,
+    appended: false
+  };
 }
 
 function withCompletionReceipt(items, id, receipt) {
   return items.map((todo) => todo.id === id ? { ...todo, completionReceipt: receipt } : todo);
+}
+
+async function hasCompletedRecord(item, receipt) {
+  const store = completedStore();
+  if (typeof store.readCompletedData !== "function") return { ok: true, exists: false };
+  const result = await store.readCompletedData();
+  if (!result.ok) return result;
+  const completed = Array.isArray(result.data?.completed) ? result.data.completed : [];
+  return {
+    ok: true,
+    exists: completed.some((record) => record.text === item.text && record.completedAt === receipt.completedAt)
+  };
 }

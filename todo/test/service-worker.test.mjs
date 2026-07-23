@@ -76,6 +76,37 @@ test("completion retry reuses its durable appended receipt after local removal f
   assert.deepEqual(chromeStub.values.todoUnfinishedItems, []);
 });
 
+test("completion retry does not duplicate JSON after appended receipt persistence fails", async (t) => {
+  let failedReceiptSave = false;
+  const chromeStub = installChromeStub(t, {
+    storageSetError(value) {
+      if (!failedReceiptSave && value.todoUnfinishedItems?.[0]?.completionReceipt?.appended === true) {
+        failedReceiptSave = true;
+        return { message: "receipt save failed" };
+      }
+      return null;
+    }
+  });
+  const worker = await importWorker("completion-appended-receipt-failure");
+  chromeStub.values.todoUnfinishedItems = [{ id: "a", text: "Task A", color: "#fff" }];
+  const completed = [];
+  worker.__setCompletedStoreForTest({
+    async readCompletedData() {
+      return { ok: true, data: { version: 1, completed: [...completed] } };
+    },
+    async appendCompletedRecord(record) {
+      completed.push(record);
+      return { ok: true };
+    }
+  });
+
+  await assert.rejects(complete(worker, "a", "2026-07-23T09:30:00.000Z"));
+  await complete(worker, "a", "2026-07-23T10:00:00.000Z");
+
+  assert.deepEqual(completed, [{ text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" }]);
+  assert.deepEqual(chromeStub.values.todoUnfinishedItems, []);
+});
+
 test("complete message preserves unfinished todo when append fails", async (t) => {
   const chromeStub = installChromeStub(t);
   const worker = await importWorker("append-failure");

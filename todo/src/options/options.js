@@ -1,5 +1,10 @@
 import { buildEChartsHeatmapOption, buildWeeklySummary } from "../shared/weekly-summary.js";
 import { MESSAGE_TYPES } from "../shared/messages.js";
+import {
+  createCompletedJsonFile,
+  pickCompletedJsonFile,
+  requestCompletedFilePermission
+} from "../shared/completed-file-store.js";
 
 const elements = {
   addColorPreset: document.getElementById("addColorPreset"),
@@ -136,15 +141,15 @@ async function refreshState() {
 
 elements.completedSearch.addEventListener("input", renderCompletedRecords);
 elements.pickCompletedFile.addEventListener("click", async () => {
-  const result = await sendMessage(MESSAGE_TYPES.PICK_COMPLETED_FILE);
+  const result = await pickCompletedJsonFile();
   if (result.ok) await refreshCompletedData();
 });
 elements.createCompletedFile.addEventListener("click", async () => {
-  const result = await sendMessage(MESSAGE_TYPES.CREATE_COMPLETED_FILE);
+  const result = await createCompletedJsonFile();
   if (result.ok) await refreshCompletedData();
 });
 elements.requestCompletedPermission.addEventListener("click", async () => {
-  const result = await sendMessage(MESSAGE_TYPES.REQUEST_COMPLETED_FILE_PERMISSION);
+  const result = await requestCompletedFilePermission();
   elements.completedFileStatus.textContent = result.ok ? "权限已授予" : result.message;
 });
 elements.addColorPreset.addEventListener("click", () => {

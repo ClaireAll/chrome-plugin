@@ -63,7 +63,8 @@ export function buildEChartsHeatmapOption(summary) {
 
   return {
     tooltip: {
-      formatter: ({ data: point }) => point?.[3]?.join("<br>") || ""
+      renderMode: "richText",
+      formatter: ({ data: point }) => point?.[3]?.join("\n") || ""
     },
     grid: { top: 28, right: 16, bottom: 16, left: 58, containLabel: true },
     xAxis: { type: "category", data: summary.days.map((day) => day.label), splitArea: { show: true } },

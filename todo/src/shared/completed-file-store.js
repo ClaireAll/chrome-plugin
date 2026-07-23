@@ -102,6 +102,9 @@ export async function writeCompletedData(data) {
 export async function appendCompletedRecordToFile(text, completedAt) {
   const result = await readCompletedData();
   if (!result.ok) return result;
+  if (result.data.completed.some((record) => record.text === String(text || "").trim() && record.completedAt === completedAt)) {
+    return { ok: true, fileName: result.fileName };
+  }
   return writeCompletedData(appendCompletedRecord(result.data, text, completedAt));
 }
 

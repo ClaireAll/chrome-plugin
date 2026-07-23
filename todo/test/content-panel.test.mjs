@@ -111,6 +111,41 @@ test("clicking the ball does not snap it but dragging does", async () => {
   assert.equal(messages.filter((message) => message.type === "TODO_UPDATE_SETTINGS").length, 1);
 });
 
+test("restored ball positions are clamped and the correction is persisted", async () => {
+  const { context, document, messages } = createContentContext({
+    settings: { ballPosition: { left: 5000, top: 5000, snapped: false, side: null } }
+  });
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+
+  assert.equal(document.elements[".todo-shell"].style.left, "1152px");
+  assert.equal(document.elements[".todo-shell"].style.top, "752px");
+  const corrected = messages.find((message) => message.type === "TODO_UPDATE_SETTINGS")?.payload.ballPosition;
+  assert.equal(corrected?.left, 1152);
+  assert.equal(corrected?.top, 752);
+  assert.equal(corrected?.snapped, false);
+  assert.equal(corrected?.side, null);
+});
+
+test("storage changes refresh the unfinished count on an injected page", async () => {
+  const { context, document, setBackgroundItems, dispatchStorageChange } = createContentContext({
+    items: [{ id: "a", text: "Task A" }]
+  });
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+  setBackgroundItems([{ id: "a", text: "Task A" }, { id: "b", text: "Task B" }]);
+  dispatchStorageChange({ todoUnfinishedItems: { newValue: [] } });
+  await delay(0);
+
+  assert.equal(document.elements[".todo-ball"].textContent, "2");
+});
+
 test("closing the panel persists a local reorder", async () => {
   const { context, messages, document } = createContentContext({
     items: [{ id: "a", text: "Task A" }, { id: "b", text: "Task B" }]
@@ -167,6 +202,7 @@ function createContentContext(options = {}) {
   const document = createDocumentStub();
   let backgroundItems = options.items || [];
   const messages = [];
+  let storageChangeListener;
   const context = {
     chrome: {
       runtime: {
@@ -174,7 +210,7 @@ function createContentContext(options = {}) {
         sendMessage(message, callback) {
           messages.push(message);
           if (message.type === "TODO_GET_STATE") {
-            callback({ ok: true, items: [...backgroundItems], settings: { colorPresets: ["#ffffff"] } });
+            callback({ ok: true, items: [...backgroundItems], settings: options.settings || { colorPresets: ["#ffffff"] } });
             return;
           }
           if (message.type === "TODO_COMPLETE_TODO") {
@@ -191,6 +227,13 @@ function createContentContext(options = {}) {
             return;
           }
           callback({ ok: true, items: [...backgroundItems] });
+        }
+      },
+      storage: {
+        onChanged: {
+          addListener(listener) {
+            storageChangeListener = listener;
+          }
         }
       }
     },
@@ -219,7 +262,13 @@ function createContentContext(options = {}) {
     Date
   };
   context.globalThis = context;
-  return { context, document, messages };
+  return {
+    context,
+    document,
+    messages,
+    setBackgroundItems(items) { backgroundItems = items; },
+    dispatchStorageChange(changes) { storageChangeListener?.(changes, "local"); }
+  };
 }
 
 function createDocumentStub() {

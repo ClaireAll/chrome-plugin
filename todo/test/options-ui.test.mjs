@@ -20,3 +20,15 @@ test("options page exposes completed records, storage, color, and weekly control
 
   assert.equal(html.includes("vendor/echarts.min.js"), true);
 });
+
+test("options page invokes completed-file picker APIs directly from click handlers", () => {
+  const source = readFileSync("src/options/options.js", "utf8");
+  const workerSource = readFileSync("src/background/service-worker.js", "utf8");
+
+  assert.match(source, /from "\.\.\/shared\/completed-file-store\.js"/);
+  assert.match(source, /pickCompletedJsonFile\(\)/);
+  assert.match(source, /createCompletedJsonFile\(\)/);
+  assert.match(source, /requestCompletedFilePermission\(\)/);
+  assert.doesNotMatch(source, /sendMessage\(MESSAGE_TYPES\.(PICK_COMPLETED_FILE|CREATE_COMPLETED_FILE|REQUEST_COMPLETED_FILE_PERMISSION)/);
+  assert.doesNotMatch(workerSource, /pickCompletedJsonFile|createCompletedJsonFile|requestCompletedFilePermission/);
+});

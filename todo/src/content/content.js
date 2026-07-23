@@ -28,7 +28,8 @@
     draggedTodoId: "",
     reorderOperations: [],
     ballDrag: null,
-    ballDragMoved: false
+    ballDragMoved: false,
+    ballPosition: null
   };
 
   const root = document.createElement("div");
@@ -65,7 +66,7 @@
   ball.addEventListener("pointerdown", startBallDrag);
   ball.addEventListener("pointermove", moveBallDrag);
   ball.addEventListener("pointerup", finishBallDrag);
-  ball.addEventListener("pointercancel", finishBallDrag);
+  ball.addEventListener("pointercancel", cancelBallDrag);
   createForm.addEventListener("submit", (event) => {
     event.preventDefault();
     runSafely(addTodo());
@@ -79,7 +80,11 @@
   list.addEventListener("drop", handleTodoDrop);
   list.addEventListener("dragend", clearTodoDrag);
   window.addEventListener("resize", () => {
+    persistClampedBallPosition();
     if (state.isOpen) positionPanel();
+  });
+  chrome.storage?.onChanged?.addListener((changes, areaName) => {
+    if (areaName === "local" && (changes.todoUnfinishedItems || changes.todoSettings)) runSafely(refreshState());
   });
 
   runSafely(refreshState());
@@ -102,9 +107,10 @@
       showToast(response?.message || "Unable to load todos");
       return;
     }
-    state.items = Array.isArray(response.items) ? response.items : [];
+    state.items = reconcilePendingReorders(Array.isArray(response.items) ? response.items : []);
     state.settings = response.settings || state.settings;
-    applyBallPosition(state.settings.ballPosition);
+    const correctedPosition = applyBallPosition(state.settings.ballPosition);
+    if (correctedPosition?.corrected) persistBallPosition(correctedPosition.position);
     render();
   }
 
@@ -304,6 +310,7 @@
 
   function clearTodoDrag() {
     state.draggedTodoId = "";
+    for (const item of list.querySelectorAll?.(".todo-drag-over") || []) item.classList.remove("todo-drag-over");
   }
 
   async function persistReorder() {
@@ -362,7 +369,14 @@
     }
     applyBallPosition({ left, top, side, snapped });
     state.ballDrag = null;
-    runSafely(sendMessage({ type: MESSAGE_TYPES.UPDATE_SETTINGS, payload: { ballPosition: { left, top, side, snapped } } }));
+    persistBallPosition({ left, top, side, snapped });
+  }
+
+  function cancelBallDrag(event) {
+    if (!state.ballDrag) return;
+    ball.releasePointerCapture?.(event.pointerId);
+    state.ballDrag = null;
+    state.ballDragMoved = false;
   }
 
   function positionPanel() {
@@ -394,10 +408,49 @@
 
   function applyBallPosition(position) {
     if (!position || !Number.isFinite(Number(position.left)) || !Number.isFinite(Number(position.top))) return;
-    shell.style.left = `${position.left}px`;
-    shell.style.top = `${position.top}px`;
+    const rect = shell.getBoundingClientRect();
+    const left = clamp(Number(position.left), 0, Math.max(0, window.innerWidth - rect.width));
+    const top = clamp(Number(position.top), 0, Math.max(0, window.innerHeight - rect.height));
+    const normalized = {
+      left,
+      top,
+      side: position.side === "left" || position.side === "right" ? position.side : null,
+      snapped: position.snapped === true
+    };
+    state.ballPosition = normalized;
+    shell.style.left = `${left}px`;
+    shell.style.top = `${top}px`;
     shell.style.right = "auto";
     shell.style.transform = "none";
+    return {
+      corrected: left !== Number(position.left) || top !== Number(position.top),
+      position: normalized
+    };
+  }
+
+  function persistClampedBallPosition() {
+    const applied = applyBallPosition(state.ballPosition);
+    if (applied?.corrected) persistBallPosition(applied.position);
+  }
+
+  function persistBallPosition(position) {
+    runSafely(sendMessage({ type: MESSAGE_TYPES.UPDATE_SETTINGS, payload: { ballPosition: position } }));
+  }
+
+  function reconcilePendingReorders(items) {
+    let reconciled = items;
+    for (const operation of state.reorderOperations) {
+      const sourceExists = reconciled.some((item) => item.id === operation.sourceId);
+      const targetExists = reconciled.some((item) => item.id === operation.targetId);
+      if (sourceExists && targetExists) {
+        const sourceIndex = reconciled.findIndex((item) => item.id === operation.sourceId);
+        const targetIndex = reconciled.findIndex((item) => item.id === operation.targetId);
+        const [moved] = reconciled.splice(sourceIndex, 1);
+        const insertionIndex = reconciled.findIndex((item) => item.id === operation.targetId) + (operation.position === "after" ? 1 : 0);
+        reconciled.splice(insertionIndex, 0, moved);
+      }
+    }
+    return reconciled;
   }
 
   function showToast(message) {

@@ -12,5 +12,6 @@ export function todoIdFromAlarmName(name) {
 export function isReminderOnTime(reminderAt, handledAt = new Date().toISOString(), graceMs = 120000) {
   const reminderTime = Date.parse(reminderAt);
   const handledTime = Date.parse(handledAt);
-  return Number.isFinite(reminderTime) && Number.isFinite(handledTime) && handledTime - reminderTime <= graceMs;
+  const delta = handledTime - reminderTime;
+  return Number.isFinite(reminderTime) && Number.isFinite(handledTime) && delta >= 0 && delta <= graceMs;
 }

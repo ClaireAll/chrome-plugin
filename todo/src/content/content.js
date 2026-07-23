@@ -16,6 +16,9 @@
   };
   const DEFAULT_COLORS = ["#ffffff", "#fef3c7", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe"];
   const EDGE_SNAP_THRESHOLD = 24;
+  const PANEL_WIDTH = 420;
+  const PANEL_HEIGHT = 560;
+  const PANEL_VIEWPORT_MARGIN = 12;
   const state = {
     items: [],
     settings: { colorPresets: DEFAULT_COLORS },
@@ -84,6 +87,7 @@
     panel.hidden = !open;
     shell.classList.toggle("todo-open", open);
     if (open) {
+      positionPanel();
       await refreshState();
       createInput.focus();
     }
@@ -334,6 +338,10 @@
   function finishBallDrag(event) {
     if (!state.ballDrag) return;
     ball.releasePointerCapture?.(event.pointerId);
+    if (!state.ballDragMoved) {
+      state.ballDrag = null;
+      return;
+    }
     const rect = shell.getBoundingClientRect();
     const maxLeft = Math.max(0, window.innerWidth - rect.width);
     let left = clamp(rect.left, 0, maxLeft);
@@ -351,7 +359,26 @@
     }
     applyBallPosition({ left, top, side, snapped });
     state.ballDrag = null;
-    if (state.ballDragMoved) runSafely(sendMessage({ type: MESSAGE_TYPES.UPDATE_SETTINGS, payload: { ballPosition: { left, top, side, snapped } } }));
+    runSafely(sendMessage({ type: MESSAGE_TYPES.UPDATE_SETTINGS, payload: { ballPosition: { left, top, side, snapped } } }));
+  }
+
+  function positionPanel() {
+    const ballRect = shell.getBoundingClientRect();
+    const maxLeft = Math.max(PANEL_VIEWPORT_MARGIN, window.innerWidth - PANEL_WIDTH - PANEL_VIEWPORT_MARGIN);
+    const maxTop = Math.max(PANEL_VIEWPORT_MARGIN, window.innerHeight - PANEL_HEIGHT - PANEL_VIEWPORT_MARGIN);
+    const ballRight = Number.isFinite(ballRect.right) ? ballRect.right : ballRect.left + ballRect.width;
+    const ballBottom = Number.isFinite(ballRect.bottom) ? ballRect.bottom : ballRect.top + ballRect.height;
+    const top = ballBottom + PANEL_VIEWPORT_MARGIN + PANEL_HEIGHT <= window.innerHeight - PANEL_VIEWPORT_MARGIN
+      ? ballBottom + PANEL_VIEWPORT_MARGIN
+      : ballRect.top - PANEL_VIEWPORT_MARGIN - PANEL_HEIGHT >= PANEL_VIEWPORT_MARGIN
+        ? ballRect.top - PANEL_VIEWPORT_MARGIN - PANEL_HEIGHT
+        : clamp(ballRect.top - (PANEL_HEIGHT - ballRect.height) / 2, PANEL_VIEWPORT_MARGIN, maxTop);
+    const left = clamp(ballRight - PANEL_WIDTH, PANEL_VIEWPORT_MARGIN, maxLeft);
+    panel.style.position = "fixed";
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
   }
 
   function applyBallPosition(position) {

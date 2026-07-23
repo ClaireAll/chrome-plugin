@@ -28,9 +28,9 @@
 }
 
 #todo-extension-root .todo-panel {
-  position: absolute;
-  right: 0;
-  bottom: 60px;
+  position: fixed;
+  top: 12px;
+  right: 12px;
   box-sizing: border-box;
   width: 420px;
   height: 560px;

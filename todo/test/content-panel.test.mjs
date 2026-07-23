@@ -19,6 +19,71 @@ test("content ball displays unfinished count and toggles the panel", async () =>
   assert.equal(document.elements[".todo-panel"].hidden, false);
 });
 
+test("panel opens fully inside an ordinary viewport", async () => {
+  const { context, document } = createContentContext({
+    items: [{ id: "a", text: "Task A" }]
+  });
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+  document.elements[".todo-ball"].dispatch("click", {});
+  await delay(0);
+
+  const top = Number.parseInt(document.elements[".todo-panel"].style.top, 10);
+  assert.equal(document.elements[".todo-panel"].style.position, "fixed");
+  assert.ok(top >= 12);
+  assert.ok(top + 560 <= context.window.innerHeight - 12);
+});
+
+test("clicking the ball does not snap it but dragging does", async () => {
+  const { context, messages, document } = createContentContext();
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+
+  const ball = document.elements[".todo-ball"];
+  ball.dispatch("pointerdown", { clientX: 10, clientY: 10, pointerId: 1 });
+  ball.dispatch("pointerup", { clientX: 10, clientY: 10, pointerId: 1 });
+  await delay(0);
+  assert.equal(document.elements[".todo-shell"].style.left, undefined);
+  assert.equal(messages.filter((message) => message.type === "TODO_UPDATE_SETTINGS").length, 0);
+
+  ball.dispatch("pointerdown", { clientX: 10, clientY: 10, pointerId: 2 });
+  ball.dispatch("pointermove", { clientX: 20, clientY: 10, pointerId: 2 });
+  ball.dispatch("pointerup", { clientX: 20, clientY: 10, pointerId: 2 });
+  await delay(0);
+  assert.equal(messages.filter((message) => message.type === "TODO_UPDATE_SETTINGS").length, 1);
+});
+
+test("closing the panel persists a local reorder", async () => {
+  const { context, messages, document } = createContentContext({
+    items: [{ id: "a", text: "Task A" }, { id: "b", text: "Task B" }]
+  });
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+  document.elements[".todo-ball"].dispatch("click", {});
+  await delay(0);
+
+  const source = createTodoTarget("a", document.elements[".todo-list"]);
+  const target = createTodoTarget("b", document.elements[".todo-list"]);
+  document.elements[".todo-list"].dispatch("dragstart", { target: source, dataTransfer: { setData() {} } });
+  document.elements[".todo-list"].dispatch("drop", { target, clientY: 0, preventDefault() {} });
+  document.elements[".todo-ball"].dispatch("click", {});
+  await delay(0);
+
+  const reorder = messages.find((message) => message.type === "TODO_REORDER_TODOS");
+  assert.equal(reorder?.payload.sourceId, "a");
+  assert.equal(reorder?.payload.targetId, "b");
+  assert.equal(reorder?.payload.position, "before");
+});
+
 test("complete keeps the item when JSON is not bound", async () => {
   const completeMessages = [];
   const { context, document } = createContentContext({
@@ -48,11 +113,13 @@ test("complete keeps the item when JSON is not bound", async () => {
 function createContentContext(options = {}) {
   const document = createDocumentStub();
   let items = options.items || [];
+  const messages = [];
   const context = {
     chrome: {
       runtime: {
         lastError: null,
         sendMessage(message, callback) {
+          messages.push(message);
           if (message.type === "TODO_GET_STATE") {
             callback({ ok: true, items, settings: { colorPresets: ["#ffffff"] } });
             return;
@@ -83,7 +150,7 @@ function createContentContext(options = {}) {
     Date
   };
   context.globalThis = context;
-  return { context, document };
+  return { context, document, messages };
 }
 
 function createDocumentStub() {
@@ -135,6 +202,16 @@ function createActionTarget(className, dataset, parentNode) {
     dataset,
     parentNode,
     closest(selector) { return selector === `.${className}` ? this : null; }
+  };
+}
+
+function createTodoTarget(todoId, parentNode) {
+  return {
+    dataset: { todoId },
+    parentNode,
+    classList: { add() {}, remove() {} },
+    closest(selector) { return selector === ".todo-item" ? this : null; },
+    getBoundingClientRect() { return { top: 10, height: 20 }; }
   };
 }
 

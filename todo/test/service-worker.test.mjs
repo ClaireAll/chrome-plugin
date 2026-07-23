@@ -107,6 +107,72 @@ test("completion retry does not duplicate JSON after appended receipt persistenc
   assert.deepEqual(chromeStub.values.todoUnfinishedItems, []);
 });
 
+test("completion retry appends when another todo already had the same text and completion time", async (t) => {
+  const chromeStub = installChromeStub(t);
+  const worker = await importWorker("completion-count-retry");
+  const completed = [{ text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" }];
+  chromeStub.values.todoUnfinishedItems = [{
+    id: "b",
+    text: "Task A",
+    color: "#fff",
+    completionReceipt: {
+      text: "Task A",
+      completedAt: "2026-07-23T09:30:00.000Z",
+      appendStarted: true,
+      appended: false,
+      matchingCountBefore: 1
+    }
+  }];
+  worker.__setCompletedStoreForTest({
+    async readCompletedData() {
+      return { ok: true, data: { version: 1, completed: [...completed] } };
+    },
+    async appendCompletedRecord(record) {
+      completed.push(record);
+      return { ok: true };
+    }
+  });
+
+  await complete(worker, "b", "2026-07-23T10:00:00.000Z");
+
+  assert.deepEqual(completed, [
+    { text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" },
+    { text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" }
+  ]);
+  assert.deepEqual(chromeStub.values.todoUnfinishedItems, []);
+});
+
+test("completion retry uses the original receipt text snapshot", async (t) => {
+  const chromeStub = installChromeStub(t);
+  const worker = await importWorker("completion-text-snapshot");
+  const completed = [];
+  chromeStub.values.todoUnfinishedItems = [{
+    id: "a",
+    text: "Edited text",
+    color: "#fff",
+    completionReceipt: {
+      text: "Original text",
+      completedAt: "2026-07-23T09:30:00.000Z",
+      appendStarted: true,
+      appended: false,
+      matchingCountBefore: 0
+    }
+  }];
+  worker.__setCompletedStoreForTest({
+    async readCompletedData() {
+      return { ok: true, data: { version: 1, completed: [...completed] } };
+    },
+    async appendCompletedRecord(record) {
+      completed.push(record);
+      return { ok: true };
+    }
+  });
+
+  await complete(worker, "a", "2026-07-23T10:00:00.000Z");
+
+  assert.deepEqual(completed, [{ text: "Original text", completedAt: "2026-07-23T09:30:00.000Z" }]);
+});
+
 test("complete message preserves unfinished todo when append fails", async (t) => {
   const chromeStub = installChromeStub(t);
   const worker = await importWorker("append-failure");

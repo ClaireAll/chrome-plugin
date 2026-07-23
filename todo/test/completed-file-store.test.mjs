@@ -94,6 +94,51 @@ test("failed completed-file creation preserves an existing binding", async () =>
   assert.deepEqual(chromeStorage.storage.todoCompletedFileMeta, originalMeta);
 });
 
+test("picked completed file must be writable before replacing an existing binding", async () => {
+  const writes = [];
+  const existing = createHandle("existing.json", "", writes);
+  const readonlyCandidate = createHandle("readonly.json", "{\"version\":1,\"completed\":[]}", writes, {
+    writeError: new Error("locked")
+  });
+  globalThis.indexedDB = createIndexedDbStub();
+  globalThis.showSaveFilePicker = async () => existing;
+  globalThis.showOpenFilePicker = async () => [readonlyCandidate];
+  const chromeStorage = createChromeStorage();
+  globalThis.chrome = chromeStorage.chrome;
+
+  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-readonly-picker`);
+  await store.createCompletedJsonFile();
+  const originalMeta = { ...chromeStorage.storage.todoCompletedFileMeta };
+
+  const result = await store.pickCompletedJsonFile();
+
+  assert.equal(result.reason, "write_error");
+  assert.equal((await store.getCompletedFileStatus()).fileName, "existing.json");
+  assert.deepEqual(chromeStorage.storage.todoCompletedFileMeta, originalMeta);
+});
+
+test("completed-file binding storage failure preserves the existing handle and metadata", async () => {
+  const writes = [];
+  const existing = createHandle("existing.json", "", writes);
+  const candidate = createHandle("candidate.json", "", writes);
+  globalThis.indexedDB = createIndexedDbStub();
+  globalThis.showSaveFilePicker = async () => existing;
+  const chromeStorage = createChromeStorage();
+  globalThis.chrome = chromeStorage.chrome;
+
+  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-storage-failure`);
+  await store.createCompletedJsonFile();
+  const originalMeta = { ...chromeStorage.storage.todoCompletedFileMeta };
+  chromeStorage.failSetWhen((value) => value.todoCompletedFileMeta?.fileName === "candidate.json");
+  globalThis.showSaveFilePicker = async () => candidate;
+
+  const result = await store.createCompletedJsonFile();
+
+  assert.equal(result.reason, "bind_error");
+  assert.equal((await store.getCompletedFileStatus()).fileName, "existing.json");
+  assert.deepEqual(chromeStorage.storage.todoCompletedFileMeta, originalMeta);
+});
+
 function createHandle(name, initialText, writes, options = {}) {
   let text = initialText;
   return {
@@ -122,16 +167,32 @@ function createHandle(name, initialText, writes, options = {}) {
 
 function createChromeStorage(initial = {}) {
   const storage = { ...initial };
+  let failSetWhen = () => false;
+  const runtime = { lastError: null };
   return {
     storage,
+    failSetWhen(callback) {
+      failSetWhen = callback;
+    },
     chrome: {
+      runtime,
       storage: {
         local: {
           get(key, callback) {
             callback({ [key]: storage[key] });
           },
           set(value, callback) {
+            if (failSetWhen(value)) {
+              runtime.lastError = { message: "storage failed" };
+              callback?.();
+              runtime.lastError = null;
+              return;
+            }
             Object.assign(storage, value);
+            callback?.();
+          },
+          remove(key, callback) {
+            delete storage[key];
             callback?.();
           }
         }

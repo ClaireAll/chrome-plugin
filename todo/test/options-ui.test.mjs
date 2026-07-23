@@ -40,3 +40,10 @@ test("options page reports picker and creation failures in the completed-file st
   assert.match(source, /elements\.pickCompletedFile\.addEventListener\("click", async \(\) => \{[\s\S]*showCompletedFileResult\(result\)/);
   assert.match(source, /elements\.createCompletedFile\.addEventListener\("click", async \(\) => \{[\s\S]*showCompletedFileResult\(result\)/);
 });
+
+test("options page sends color preset changes as a narrow settings patch", () => {
+  const source = readFileSync("src/options/options.js", "utf8");
+
+  assert.match(source, /sendMessage\(MESSAGE_TYPES\.UPDATE_SETTINGS,\s*\{\s*colorPresets\s*\}\)/);
+  assert.doesNotMatch(source, /sendMessage\(MESSAGE_TYPES\.UPDATE_SETTINGS,\s*\{\s*\.\.\.settings,\s*colorPresets\s*\}\)/);
+});

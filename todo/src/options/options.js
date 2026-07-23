@@ -87,7 +87,7 @@ function renderColorPresets() {
 }
 
 async function updateColorPresets(colorPresets) {
-  const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { ...settings, colorPresets });
+  const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { colorPresets });
   if (!result.ok) return;
   settings = result.settings;
   renderColorPresets();

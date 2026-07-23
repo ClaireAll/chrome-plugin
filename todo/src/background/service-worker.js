@@ -150,35 +150,29 @@ async function completeTodo(payload) {
 
   let receiptItems = items;
   let receipt = completionReceiptFor(item, payload.completedAt);
-  if (!item.completionReceipt ||
-    item.completionReceipt.completedAt !== receipt.completedAt ||
-    item.completionReceipt.appendStarted !== receipt.appendStarted ||
-    item.completionReceipt.appended !== receipt.appended) {
+  if (!sameCompletionReceipt(item.completionReceipt, receipt)) {
     receiptItems = withCompletionReceipt(items, item.id, receipt);
     await saveTodoItems(receiptItems);
   }
 
   if (!receipt.appended) {
-    let alreadyAppended = false;
-    if (item.completionReceipt?.appendStarted === true) {
-      const existingResult = await hasCompletedRecord(item, receipt);
-      if (!existingResult.ok) return existingResult;
-      alreadyAppended = existingResult.exists;
+    if (!receipt.appendStarted || !Number.isInteger(receipt.matchingCountBefore)) {
+      const countResult = await countCompletedRecords(receipt);
+      if (!countResult.ok) return countResult;
+      receipt = {
+        ...receipt,
+        appendStarted: true,
+        matchingCountBefore: countResult.count
+      };
+      receiptItems = withCompletionReceipt(receiptItems, item.id, receipt);
+      await saveTodoItems(receiptItems);
     }
 
-    if (!alreadyAppended) {
-      if (!receipt.appendStarted) {
-        receipt = { ...receipt, appendStarted: true };
-        receiptItems = withCompletionReceipt(receiptItems, item.id, receipt);
-        await saveTodoItems(receiptItems);
-      }
-
-      const result = await completedStore().appendCompletedRecord({ text: item.text, completedAt: receipt.completedAt });
-      if (!result.ok) {
-        receipt = { ...receipt, appendStarted: false };
-        await saveTodoItems(withCompletionReceipt(receiptItems, item.id, receipt));
-        return result;
-      }
+    const countResult = await countCompletedRecords(receipt);
+    if (!countResult.ok) return countResult;
+    if (countResult.count <= receipt.matchingCountBefore) {
+      const result = await completedStore().appendCompletedRecord({ text: receipt.text, completedAt: receipt.completedAt });
+      if (!result.ok) return result;
     }
 
     receipt = { ...receipt, appendStarted: true, appended: true };
@@ -218,16 +212,22 @@ function completionReceiptFor(item, completedAt) {
   const existing = item.completionReceipt;
   if (existing && Number.isFinite(Date.parse(existing.completedAt))) {
     return {
+      text: String(existing.text || item.text || "").trim(),
       completedAt: new Date(existing.completedAt).toISOString(),
       appendStarted: existing.appendStarted === true || existing.appended === true,
-      appended: existing.appended === true
+      appended: existing.appended === true,
+      matchingCountBefore: Number.isInteger(existing.matchingCountBefore) && existing.matchingCountBefore >= 0
+        ? existing.matchingCountBefore
+        : null
     };
   }
   const time = new Date(completedAt);
   return {
+    text: String(item.text || "").trim(),
     completedAt: Number.isNaN(time.getTime()) ? new Date().toISOString() : time.toISOString(),
     appendStarted: false,
-    appended: false
+    appended: false,
+    matchingCountBefore: null
   };
 }
 
@@ -235,14 +235,23 @@ function withCompletionReceipt(items, id, receipt) {
   return items.map((todo) => todo.id === id ? { ...todo, completionReceipt: receipt } : todo);
 }
 
-async function hasCompletedRecord(item, receipt) {
+function sameCompletionReceipt(left, right) {
+  return left &&
+    left.text === right.text &&
+    left.completedAt === right.completedAt &&
+    left.appendStarted === right.appendStarted &&
+    left.appended === right.appended &&
+    left.matchingCountBefore === right.matchingCountBefore;
+}
+
+async function countCompletedRecords(receipt) {
   const store = completedStore();
-  if (typeof store.readCompletedData !== "function") return { ok: true, exists: false };
+  if (typeof store.readCompletedData !== "function") return { ok: true, count: 0 };
   const result = await store.readCompletedData();
   if (!result.ok) return result;
   const completed = Array.isArray(result.data?.completed) ? result.data.completed : [];
   return {
     ok: true,
-    exists: completed.some((record) => record.text === item.text && record.completedAt === receipt.completedAt)
+    count: completed.filter((record) => record.text === receipt.text && record.completedAt === receipt.completedAt).length
   };
 }

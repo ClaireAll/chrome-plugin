@@ -30,10 +30,13 @@ export async function pickCompletedJsonFile(options = {}) {
     const [handle] = await globalThis.showOpenFilePicker(filePickerOptions(options));
     const permission = await ensureFilePermission(handle, "readwrite", { allowRequest: true });
     if (!permission.ok) return permission;
-    const result = await readCompletedDataForHandle(handle);
+    const result = await readCompletedDataForHandle(handle, { includeRawText: true });
     if (!result.ok) return result;
-    await saveCompletedFileHandle(handle);
-    return result;
+    const writeResult = await writeTextForHandle(handle, result.rawText);
+    if (!writeResult.ok) return writeResult;
+    const bindResult = await saveCompletedFileHandle(handle);
+    if (!bindResult.ok) return bindResult;
+    return { ok: true, data: result.data, fileName: result.fileName };
   } catch (error) {
     return failure("picker_cancelled", error?.message || "No completed JSON file was selected");
   }
@@ -51,7 +54,8 @@ export async function createCompletedJsonFile(options = {}) {
     if (!permission.ok) return permission;
     const result = await writeCompletedDataForHandle(handle, createEmptyCompletedData());
     if (!result.ok) return result;
-    await saveCompletedFileHandle(handle);
+    const bindResult = await saveCompletedFileHandle(handle);
+    if (!bindResult.ok) return bindResult;
     return result;
   } catch (error) {
     return failure("picker_cancelled", error?.message || "No completed JSON file was created");
@@ -69,7 +73,7 @@ export async function readCompletedData() {
   return readCompletedDataForHandle(handle);
 }
 
-async function readCompletedDataForHandle(handle) {
+async function readCompletedDataForHandle(handle, options = {}) {
   if (!handle) return failure("missing_file", "No completed JSON file is bound");
 
   const permission = await ensureFilePermission(handle, "read");
@@ -81,7 +85,8 @@ async function readCompletedDataForHandle(handle) {
     return {
       ok: true,
       data: normalizeCompletedData(text.trim() ? JSON.parse(text) : createEmptyCompletedData()),
-      fileName: handle.name
+      fileName: handle.name,
+      ...(options.includeRawText ? { rawText: text } : {})
     };
   } catch (error) {
     if (isPermissionError(error)) return failure("permission_denied", PERMISSION_MESSAGE);
@@ -97,12 +102,16 @@ export async function writeCompletedData(data) {
 async function writeCompletedDataForHandle(handle, data) {
   if (!handle) return failure("missing_file", "No completed JSON file is bound");
 
+  return writeTextForHandle(handle, `${JSON.stringify(normalizeCompletedData(data), null, 2)}\n`);
+}
+
+async function writeTextForHandle(handle, text) {
+  if (!handle) return failure("missing_file", "No completed JSON file is bound");
   const permission = await ensureFilePermission(handle, "readwrite");
   if (!permission.ok) return permission;
-
   try {
     const writable = await handle.createWritable();
-    await writable.write(`${JSON.stringify(normalizeCompletedData(data), null, 2)}\n`);
+    await writable.write(String(text || ""));
     await writable.close();
     return { ok: true, fileName: handle.name };
   } catch (error) {
@@ -118,14 +127,24 @@ export async function appendCompletedRecordToFile(text, completedAt) {
 }
 
 async function saveCompletedFileHandle(handle) {
-  const db = await openDatabase();
-  await putInStore(db, COMPLETED_HANDLE_KEY, handle);
-  await chromeStorageSet({
-    [COMPLETED_META_KEY]: {
+  try {
+    const db = await openDatabase();
+    const previousMeta = (await chromeStorageGet(COMPLETED_META_KEY))[COMPLETED_META_KEY];
+    const nextMeta = {
       fileName: handle?.name || "todo-completed.json",
       boundAt: new Date().toISOString()
+    };
+    await chromeStorageSet({ [COMPLETED_META_KEY]: nextMeta });
+    try {
+      await putInStore(db, COMPLETED_HANDLE_KEY, handle);
+      return { ok: true, fileName: nextMeta.fileName };
+    } catch {
+      await restoreCompletedFileMeta(previousMeta);
+      return failure("bind_error", "Completed JSON file binding failed");
     }
-  });
+  } catch {
+    return failure("bind_error", "Completed JSON file binding failed");
+  }
 }
 
 async function getCompletedFileHandle() {
@@ -181,10 +200,38 @@ function chromeStorageGet(key) {
 }
 
 function chromeStorageSet(value) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (!globalThis.chrome?.storage?.local) return resolve();
-    chrome.storage.local.set(value, resolve);
+    chrome.storage.local.set(value, () => {
+      const error = chrome.runtime?.lastError;
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
   });
+}
+
+function chromeStorageRemove(key) {
+  return new Promise((resolve, reject) => {
+    if (!globalThis.chrome?.storage?.local?.remove) return resolve();
+    chrome.storage.local.remove(key, () => {
+      const error = chrome.runtime?.lastError;
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+async function restoreCompletedFileMeta(previousMeta) {
+  try {
+    if (previousMeta) await chromeStorageSet({ [COMPLETED_META_KEY]: previousMeta });
+    else await chromeStorageRemove(COMPLETED_META_KEY);
+  } catch {}
 }
 
 function openDatabase() {

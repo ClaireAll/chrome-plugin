@@ -28,10 +28,12 @@ export async function pickCompletedJsonFile(options = {}) {
 
   try {
     const [handle] = await globalThis.showOpenFilePicker(filePickerOptions(options));
-    await saveCompletedFileHandle(handle);
     const permission = await ensureFilePermission(handle, "readwrite", { allowRequest: true });
     if (!permission.ok) return permission;
-    return await readCompletedData();
+    const result = await readCompletedDataForHandle(handle);
+    if (!result.ok) return result;
+    await saveCompletedFileHandle(handle);
+    return result;
   } catch (error) {
     return failure("picker_cancelled", error?.message || "No completed JSON file was selected");
   }
@@ -45,10 +47,12 @@ export async function createCompletedJsonFile(options = {}) {
       suggestedName: options.fileName || "todo-completed.json",
       ...filePickerOptions(options)
     });
-    await saveCompletedFileHandle(handle);
     const permission = await ensureFilePermission(handle, "readwrite", { allowRequest: true });
     if (!permission.ok) return permission;
-    return await writeCompletedData(createEmptyCompletedData());
+    const result = await writeCompletedDataForHandle(handle, createEmptyCompletedData());
+    if (!result.ok) return result;
+    await saveCompletedFileHandle(handle);
+    return result;
   } catch (error) {
     return failure("picker_cancelled", error?.message || "No completed JSON file was created");
   }
@@ -62,6 +66,10 @@ export async function requestCompletedFilePermission(mode = "readwrite") {
 
 export async function readCompletedData() {
   const handle = await getCompletedFileHandle();
+  return readCompletedDataForHandle(handle);
+}
+
+async function readCompletedDataForHandle(handle) {
   if (!handle) return failure("missing_file", "No completed JSON file is bound");
 
   const permission = await ensureFilePermission(handle, "read");
@@ -83,6 +91,10 @@ export async function readCompletedData() {
 
 export async function writeCompletedData(data) {
   const handle = await getCompletedFileHandle();
+  return writeCompletedDataForHandle(handle, data);
+}
+
+async function writeCompletedDataForHandle(handle, data) {
   if (!handle) return failure("missing_file", "No completed JSON file is bound");
 
   const permission = await ensureFilePermission(handle, "readwrite");
@@ -102,9 +114,6 @@ export async function writeCompletedData(data) {
 export async function appendCompletedRecordToFile(text, completedAt) {
   const result = await readCompletedData();
   if (!result.ok) return result;
-  if (result.data.completed.some((record) => record.text === String(text || "").trim() && record.completedAt === completedAt)) {
-    return { ok: true, fileName: result.fileName };
-  }
   return writeCompletedData(appendCompletedRecord(result.data, text, completedAt));
 }
 

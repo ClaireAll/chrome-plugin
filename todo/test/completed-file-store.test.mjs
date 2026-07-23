@@ -35,7 +35,66 @@ test("completed file store reports parse errors without overwriting bad JSON", a
   assert.equal(writes.length, 0);
 });
 
-function createHandle(name, initialText, writes) {
+test("completed file store appends matching completed records from separate todos", async () => {
+  const writes = [];
+  globalThis.indexedDB = createIndexedDbStub();
+  globalThis.showSaveFilePicker = async () => createHandle("completed.json", "", writes);
+  globalThis.chrome = createChromeStorage().chrome;
+
+  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-duplicate-records`);
+  await store.createCompletedJsonFile();
+  await store.appendCompletedRecordToFile("Task A", "2026-07-23T09:30:00.000Z");
+  await store.appendCompletedRecordToFile("Task A", "2026-07-23T09:30:00.000Z");
+
+  assert.deepEqual(JSON.parse(writes.at(-1)).completed, [
+    { text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" },
+    { text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" }
+  ]);
+});
+
+test("invalid selected JSON preserves an existing completed-file binding", async () => {
+  const writes = [];
+  const existing = createHandle("existing.json", "", writes);
+  const invalid = createHandle("invalid.json", "{invalid", writes);
+  globalThis.indexedDB = createIndexedDbStub();
+  globalThis.showSaveFilePicker = async () => existing;
+  globalThis.showOpenFilePicker = async () => [invalid];
+  const chromeStorage = createChromeStorage();
+  globalThis.chrome = chromeStorage.chrome;
+
+  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-invalid-picker`);
+  await store.createCompletedJsonFile();
+  const originalMeta = { ...chromeStorage.storage.todoCompletedFileMeta };
+
+  const result = await store.pickCompletedJsonFile();
+
+  assert.equal(result.reason, "parse_error");
+  assert.equal((await store.getCompletedFileStatus()).fileName, "existing.json");
+  assert.deepEqual(chromeStorage.storage.todoCompletedFileMeta, originalMeta);
+});
+
+test("failed completed-file creation preserves an existing binding", async () => {
+  const writes = [];
+  const existing = createHandle("existing.json", "", writes);
+  const failing = createHandle("failing.json", "", writes, { writeError: new Error("disk full") });
+  globalThis.indexedDB = createIndexedDbStub();
+  globalThis.showSaveFilePicker = async () => existing;
+  const chromeStorage = createChromeStorage();
+  globalThis.chrome = chromeStorage.chrome;
+
+  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-failed-create`);
+  await store.createCompletedJsonFile();
+  const originalMeta = { ...chromeStorage.storage.todoCompletedFileMeta };
+  globalThis.showSaveFilePicker = async () => failing;
+
+  const result = await store.createCompletedJsonFile();
+
+  assert.equal(result.reason, "write_error");
+  assert.equal((await store.getCompletedFileStatus()).fileName, "existing.json");
+  assert.deepEqual(chromeStorage.storage.todoCompletedFileMeta, originalMeta);
+});
+
+function createHandle(name, initialText, writes, options = {}) {
   let text = initialText;
   return {
     name,
@@ -51,6 +110,7 @@ function createHandle(name, initialText, writes) {
     async createWritable() {
       return {
         async write(nextText) {
+          if (options.writeError) throw options.writeError;
           text = nextText;
           writes.push(nextText);
         },

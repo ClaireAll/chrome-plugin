@@ -32,3 +32,11 @@ test("options page invokes completed-file picker APIs directly from click handle
   assert.doesNotMatch(source, /sendMessage\(MESSAGE_TYPES\.(PICK_COMPLETED_FILE|CREATE_COMPLETED_FILE|REQUEST_COMPLETED_FILE_PERMISSION)/);
   assert.doesNotMatch(workerSource, /pickCompletedJsonFile|createCompletedJsonFile|requestCompletedFilePermission/);
 });
+
+test("options page reports picker and creation failures in the completed-file status", () => {
+  const source = readFileSync("src/options/options.js", "utf8");
+
+  assert.match(source, /function showCompletedFileResult\(result\)[\s\S]*completedFileStatus\.textContent\s*=\s*result\.message\s*\|\|\s*"Completed JSON file operation failed"/);
+  assert.match(source, /elements\.pickCompletedFile\.addEventListener\("click", async \(\) => \{[\s\S]*showCompletedFileResult\(result\)/);
+  assert.match(source, /elements\.createCompletedFile\.addEventListener\("click", async \(\) => \{[\s\S]*showCompletedFileResult\(result\)/);
+});

@@ -128,6 +128,14 @@ async function refreshCompletedData() {
   renderWeeklySummary();
 }
 
+async function showCompletedFileResult(result) {
+  if (result.ok) {
+    await refreshCompletedData();
+    return;
+  }
+  elements.completedFileStatus.textContent = result.message || "Completed JSON file operation failed";
+}
+
 async function refreshState() {
   const state = await sendMessage(MESSAGE_TYPES.GET_STATE);
   if (state.ok) {
@@ -142,11 +150,11 @@ async function refreshState() {
 elements.completedSearch.addEventListener("input", renderCompletedRecords);
 elements.pickCompletedFile.addEventListener("click", async () => {
   const result = await pickCompletedJsonFile();
-  if (result.ok) await refreshCompletedData();
+  await showCompletedFileResult(result);
 });
 elements.createCompletedFile.addEventListener("click", async () => {
   const result = await createCompletedJsonFile();
-  if (result.ok) await refreshCompletedData();
+  await showCompletedFileResult(result);
 });
 elements.requestCompletedPermission.addEventListener("click", async () => {
   const result = await requestCompletedFilePermission();

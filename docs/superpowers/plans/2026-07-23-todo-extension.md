@@ -24,7 +24,7 @@
 - Deleting an unfinished todo requires no confirmation.
 - Drag sorting persists when the panel closes.
 - Reminder notifications fire once only when Chrome is running and the alarm handler is on time.
-- A reminder alarm handler more than two minutes late marks the item reminded without showing a notification.
+- A reminder alarm handler more than two minutes early or late is ignored and leaves the item eligible for a matching alarm.
 - Notification clicks perform no action.
 - Management search filters completed records by text only.
 - Management can edit completed record text and delete one completed record.
@@ -1566,7 +1566,7 @@ rtk git commit -m "feat: complete todo chrome extension"
 
 - Message names in tasks match `MESSAGE_TYPES` from Task 1.
 - Completed record mutation uses `recordIndex` from the source JSON array so the JSON schema remains exactly `{ text, completedAt }`.
-- Reminder task uses the same two-minute grace rule from the approved spec.
+- Reminder task uses the same two-minute on-time window from the approved spec; early and late alarms do not mark items reminded.
 - The content script remains non-module because the manifest uses plain content script loading.
 - All commands use `rtk` as required by this repository.
 

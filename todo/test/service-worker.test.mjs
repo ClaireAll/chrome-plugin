@@ -139,6 +139,50 @@ test("on-time alarm creates a notification before marking the todo reminded", as
   assert.ok(chromeStub.events.indexOf("notification") < chromeStub.events.lastIndexOf("save"));
 });
 
+test("alarm serialization preserves a todo added while its notification is pending", async (t) => {
+  let releaseNotification;
+  let notificationReleased = false;
+  const release = () => {
+    if (notificationReleased) return;
+    notificationReleased = true;
+    releaseNotification();
+  };
+  const chromeStub = installChromeStub(t, {
+    createNotification: () => new Promise((resolve) => { releaseNotification = resolve; }),
+    onStorageSet(value) {
+      if (value.todoUnfinishedItems?.some((item) => item.text === "Task B")) release();
+    }
+  });
+  const worker = await importWorker("alarm-add-race");
+  chromeStub.values.todoUnfinishedItems = [reminderTodo()];
+
+  const alarm = worker.handleAlarm(matchingAlarm(), "2026-07-23T09:00:01.000Z");
+  await new Promise((resolve) => setImmediate(resolve));
+  const add = worker.handleMessage({ type: MESSAGE_TYPES.ADD_TODO, payload: { text: "Task B" } });
+
+  setTimeout(release, 20);
+  await Promise.all([alarm, add]);
+
+  assert.deepEqual(chromeStub.values.todoUnfinishedItems.map((item) => item.text), ["Task A", "Task B"]);
+  assert.equal(chromeStub.values.todoUnfinishedItems[0].reminded, true);
+});
+
+test("simultaneous valid alarms mark both matching todos reminded", async (t) => {
+  const chromeStub = installChromeStub(t);
+  const worker = await importWorker("simultaneous-alarms");
+  chromeStub.values.todoUnfinishedItems = [
+    reminderTodo("a", "Task A"),
+    reminderTodo("b", "Task B")
+  ];
+
+  await Promise.all([
+    worker.handleAlarm(matchingAlarm("a"), "2026-07-23T09:00:01.000Z"),
+    worker.handleAlarm(matchingAlarm("b"), "2026-07-23T09:00:01.000Z")
+  ]);
+
+  assert.deepEqual(chromeStub.values.todoUnfinishedItems.map((item) => item.reminded), [true, true]);
+});
+
 test("reminder persistence completes before its alarm is scheduled", async (t) => {
   const chromeStub = installChromeStub(t);
   const worker = await importWorker("reminder-order");
@@ -170,12 +214,12 @@ function complete(worker, id, completedAt) {
   return worker.handleMessage({ type: MESSAGE_TYPES.COMPLETE_TODO, payload: { id, completedAt } });
 }
 
-function reminderTodo() {
-  return { id: "a", text: "Task A", color: "#fff", reminderAt: "2026-07-23T09:00:00.000Z", reminded: false };
+function reminderTodo(id = "a", text = "Task A") {
+  return { id, text, color: "#fff", reminderAt: "2026-07-23T09:00:00.000Z", reminded: false };
 }
 
-function matchingAlarm() {
-  return { name: "todo-reminder:a", scheduledTime: Date.parse("2026-07-23T09:00:00.000Z") };
+function matchingAlarm(id = "a") {
+  return { name: `todo-reminder:${id}`, scheduledTime: Date.parse("2026-07-23T09:00:00.000Z") };
 }
 
 function importWorker(name) {
@@ -212,6 +256,7 @@ function createChromeStub(options = {}) {
         stub._notificationPayload = payload;
         stub.events.push("notification");
         if (options.notificationError) throw options.notificationError;
+        return options.createNotification?.();
       },
       onClicked: { addListener(callback) { notificationClick = callback; } }
     },
@@ -235,6 +280,7 @@ function createChromeStub(options = {}) {
             return;
           }
           Object.assign(values, value);
+          options.onStorageSet?.(value);
           callback?.();
         }
       }

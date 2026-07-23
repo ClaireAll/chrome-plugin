@@ -89,6 +89,10 @@ async function handleMessageNow(message = {}, sender) {
 }
 
 export async function handleAlarm(alarm, handledAt = new Date().toISOString()) {
+  return enqueueMutation(() => handleAlarmNow(alarm, handledAt));
+}
+
+async function handleAlarmNow(alarm, handledAt) {
   const id = todoIdFromAlarmName(alarm?.name);
   if (!id) return;
 

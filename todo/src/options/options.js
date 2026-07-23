@@ -20,6 +20,7 @@ const elements = {
 
 let completedData = { completed: [] };
 let completedStatus = null;
+let completedMutationBusy = false;
 let settings = { colorPresets: [] };
 let chart = null;
 
@@ -58,6 +59,7 @@ function renderCompletedRecords() {
     const input = document.createElement("input");
     input.value = record.text;
     input.setAttribute("aria-label", "完成任务文本");
+    input.disabled = completedMutationBusy;
     input.addEventListener("change", async () => {
       await handleCompletedMutation(
         () => sendMessage(MESSAGE_TYPES.UPDATE_COMPLETED_RECORD, { recordIndex: record.recordIndex, text: input.value }),
@@ -68,12 +70,14 @@ function renderCompletedRecords() {
     time.className = "completed-time";
     time.dateTime = record.completedAt;
     time.textContent = new Date(record.completedAt).toLocaleString();
-    row.append(input, time, createButton("删除", "icon-button", async () => {
+    const deleteButton = createButton("删除", "icon-button", async () => {
       await handleCompletedMutation(
         () => sendMessage(MESSAGE_TYPES.DELETE_COMPLETED_RECORD, { recordIndex: record.recordIndex }),
         "完成记录删除失败"
       );
-    }));
+    });
+    deleteButton.disabled = completedMutationBusy;
+    row.append(input, time, deleteButton);
     elements.completedList.append(row);
   }
 }
@@ -128,14 +132,18 @@ async function refreshCompletedData(statusOverride = "") {
   if (!result.ok) {
     elements.completedFileStatus.textContent = statusOverride || completedFileStatusText() || result.message || "未绑定完成记录文件";
   } else {
-    completedData = result.data;
+    applyCompletedData(result.data);
     elements.completedFileStatus.textContent = statusOverride || completedFileStatusText(result.fileName);
+    return;
   }
   renderCompletedRecords();
   renderWeeklySummary();
 }
 
 async function handleCompletedMutation(operation, fallbackMessage) {
+  if (completedMutationBusy) return;
+  completedMutationBusy = true;
+  renderCompletedRecords();
   try {
     const result = await operation();
     if (result?.ok) {
@@ -145,12 +153,16 @@ async function handleCompletedMutation(operation, fallbackMessage) {
     await refreshCompletedData(result?.message || fallbackMessage);
   } catch (error) {
     await refreshCompletedData(error?.message || fallbackMessage);
+  } finally {
+    completedMutationBusy = false;
+    renderCompletedRecords();
   }
 }
 
 async function showCompletedFileResult(result) {
   if (result.ok) {
     applyCompletedStatus(result);
+    if (result.data) applyCompletedData(result.data);
     await refreshCompletedData();
     return;
   }
@@ -174,6 +186,12 @@ function applyCompletedStatus(status) {
     permission: status.permission || completedStatus?.permission || ""
   };
   elements.completedFileStatus.textContent = completedFileStatusText(completedStatus.fileName);
+}
+
+function applyCompletedData(data) {
+  completedData = data && Array.isArray(data.completed) ? data : { completed: [] };
+  renderCompletedRecords();
+  renderWeeklySummary();
 }
 
 function completedFileStatusText(fileName) {

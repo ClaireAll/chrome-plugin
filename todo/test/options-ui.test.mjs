@@ -129,6 +129,36 @@ test("permission success updates status before any later refresh can fail", () =
   assert.match(source, /elements\.requestCompletedPermission\.addEventListener\("click", async \(\) => \{[\s\S]*if \(result\.ok\) \{[\s\S]*applyCompletedStatus\(result\)[\s\S]*await refreshCompletedData\(\)/);
 });
 
+test("completed file picker result replaces stale records before a later refresh fails", () => {
+  const source = readFileSync("src/options/options.js", "utf8");
+
+  assert.match(source, /function showCompletedFileResult\(result\)[\s\S]*applyCompletedStatus\(result\)[\s\S]*if \(result\.data\)[\s\S]*applyCompletedData\(result\.data\)/);
+});
+
+test("completed record mutations are ignored while another mutation is pending", async (t) => {
+  const releaseUpdates = [];
+  let updateCalls = 0;
+  const page = await loadOptionsPage(t, {
+    [MESSAGE_TYPES.UPDATE_COMPLETED_RECORD]: () => {
+      updateCalls += 1;
+      return new Promise((resolve) => { releaseUpdates.push(() => resolve({ ok: true })); });
+    }
+  });
+  const input = page.findByTag("input", page.elements.completedList);
+
+  input.value = "First edit";
+  const first = input.dispatch("change");
+  await flush();
+  input.value = "Second edit";
+  const second = input.dispatch("change");
+  await flush();
+  for (const releaseUpdate of releaseUpdates) releaseUpdate();
+  await Promise.all([first, second]);
+  await flush();
+
+  assert.equal(updateCalls, 1);
+});
+
 async function loadOptionsPage(t, overrides = {}) {
   const previousDocument = globalThis.document;
   const previousChrome = globalThis.chrome;

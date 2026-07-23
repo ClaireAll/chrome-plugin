@@ -58,11 +58,12 @@ export async function createCompletedJsonFile(options = {}) {
     const permission = await ensureFilePermission(handle, "readwrite", { allowRequest: true });
     if (!permission.ok) return permission;
     return withCompletedFileLock(async () => {
-      const result = await writeCompletedDataForHandle(handle, createEmptyCompletedData());
+      const data = createEmptyCompletedData();
+      const result = await writeCompletedDataForHandle(handle, data);
       if (!result.ok) return result;
       const bindResult = await saveCompletedFileHandle(handle);
       if (!bindResult.ok) return bindResult;
-      return { ...result, permission: "granted" };
+      return { ...result, data, permission: "granted" };
     });
   } catch (error) {
     return failure("picker_cancelled", error?.message || "No completed JSON file was created");

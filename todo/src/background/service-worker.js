@@ -165,11 +165,6 @@ async function completeTodo(payload) {
 
 async function completeTodoItem(items, item, receipt) {
   let receiptItems = items;
-  if (!sameCompletionReceipt(item.completionReceipt, receipt)) {
-    receiptItems = withCompletionReceipt(items, item.id, receipt);
-    await saveTodoItems(receiptItems);
-  }
-
   if (!receipt.appended) {
     if (!receipt.appendStarted || !Number.isInteger(receipt.matchingCountBefore)) {
       const countResult = await countCompletedRecords(receipt);
@@ -237,7 +232,7 @@ function isMutationMessage(type) {
 
 function completionReceiptFor(item, completedAt) {
   const existing = item.completionReceipt;
-  if (existing && Number.isFinite(Date.parse(existing.completedAt))) {
+  if ((existing?.appendStarted || existing?.appended) && Number.isFinite(Date.parse(existing.completedAt))) {
     return {
       text: String(existing.text || item.text || "").trim(),
       completedAt: new Date(existing.completedAt).toISOString(),
@@ -260,15 +255,6 @@ function completionReceiptFor(item, completedAt) {
 
 function withCompletionReceipt(items, id, receipt) {
   return items.map((todo) => todo.id === id ? { ...todo, completionReceipt: receipt } : todo);
-}
-
-function sameCompletionReceipt(left, right) {
-  return left &&
-    left.text === right.text &&
-    left.completedAt === right.completedAt &&
-    left.appendStarted === right.appendStarted &&
-    left.appended === right.appended &&
-    left.matchingCountBefore === right.matchingCountBefore;
 }
 
 function isMatchingPendingCompletion(item, targetReceipt) {

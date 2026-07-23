@@ -173,6 +173,50 @@ test("completion retry uses the original receipt text snapshot", async (t) => {
   assert.deepEqual(completed, [{ text: "Original text", completedAt: "2026-07-23T09:30:00.000Z" }]);
 });
 
+test("completion after a preflight failure uses the current todo text and time", async (t) => {
+  const chromeStub = installChromeStub(t);
+  const worker = await importWorker("completion-preflight-failure");
+  const completed = [];
+  let readCount = 0;
+  chromeStub.values.todoUnfinishedItems = [{ id: "a", text: "Old text", color: "#fff" }];
+  worker.__setCompletedStoreForTest({
+    async readCompletedData() {
+      readCount += 1;
+      return readCount === 1
+        ? { ok: false, reason: "missing_file", message: "No completed JSON file is bound" }
+        : { ok: true, data: { version: 1, completed: [...completed] } };
+    },
+    async appendCompletedRecord(record) {
+      completed.push(record);
+      return { ok: true };
+    }
+  });
+
+  const first = await complete(worker, "a", "2026-07-23T09:30:00.000Z");
+  chromeStub.values.todoUnfinishedItems = [{ ...chromeStub.values.todoUnfinishedItems[0], text: "New text" }];
+  await complete(worker, "a", "2026-07-23T10:00:00.000Z");
+
+  assert.deepEqual(first, { ok: false, reason: "missing_file", message: "No completed JSON file is bound" });
+  assert.deepEqual(completed, [{ text: "New text", completedAt: "2026-07-23T10:00:00.000Z" }]);
+});
+
+test("completion preflight failure leaves the unfinished todo unchanged", async (t) => {
+  const chromeStub = installChromeStub(t);
+  const worker = await importWorker("completion-preflight-preserve");
+  const todo = { id: "a", text: "Task A", color: "#fff" };
+  chromeStub.values.todoUnfinishedItems = [todo];
+  worker.__setCompletedStoreForTest({
+    async readCompletedData() {
+      return { ok: false, reason: "missing_file", message: "No completed JSON file is bound" };
+    }
+  });
+
+  const result = await complete(worker, "a", "2026-07-23T09:30:00.000Z");
+
+  assert.deepEqual(result, { ok: false, reason: "missing_file", message: "No completed JSON file is bound" });
+  assert.deepEqual(chromeStub.values.todoUnfinishedItems, [todo]);
+});
+
 test("completion recovers an older same-signature pending receipt before completing a new todo", async (t) => {
   const chromeStub = installChromeStub(t);
   const worker = await importWorker("completion-pending-owner");

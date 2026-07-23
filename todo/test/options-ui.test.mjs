@@ -120,7 +120,15 @@ test("completed file status keeps prompt permission when completed data cannot b
     [MESSAGE_TYPES.READ_COMPLETED_DATA]: { ok: false, message: "Permission required" }
   });
 
-  assert.equal(page.elements.completedFileStatus.textContent, "completed.json (prompt)");
+  assert.equal(page.elements.completedFileStatus.textContent, "completed.json (prompt) - Permission required");
+});
+
+test("completed file read failures show the read error beside the bound file status", async (t) => {
+  const page = await loadOptionsPage(t, {
+    [MESSAGE_TYPES.READ_COMPLETED_DATA]: { ok: false, reason: "parse_error", message: "Completed JSON is invalid" }
+  });
+
+  assert.equal(page.elements.completedFileStatus.textContent, "completed.json (granted) - Completed JSON is invalid");
 });
 
 test("permission success updates status before any later refresh can fail", () => {

@@ -130,7 +130,7 @@ async function refreshCompletedData(statusOverride = "") {
     message: error?.message || "无法读取完成记录文件"
   }));
   if (!result.ok) {
-    elements.completedFileStatus.textContent = statusOverride || completedFileStatusText() || result.message || "未绑定完成记录文件";
+    elements.completedFileStatus.textContent = statusOverride || completedFileErrorText(result.message || "未绑定完成记录文件");
   } else {
     applyCompletedData(result.data);
     elements.completedFileStatus.textContent = statusOverride || completedFileStatusText(result.fileName);
@@ -200,6 +200,11 @@ function completedFileStatusText(fileName) {
   return completedStatus?.permission && completedStatus.fileName === name
     ? `${name} (${completedStatus.permission})`
     : name;
+}
+
+function completedFileErrorText(message) {
+  const status = completedFileStatusText();
+  return status ? `${status} - ${message}` : message;
 }
 
 elements.completedSearch.addEventListener("input", renderCompletedRecords);

@@ -217,6 +217,33 @@ test("completion preflight failure leaves the unfinished todo unchanged", async 
   assert.deepEqual(chromeStub.values.todoUnfinishedItems, [todo]);
 });
 
+test("fresh completion does not do a second pre-append completed read", async (t) => {
+  const chromeStub = installChromeStub(t);
+  const worker = await importWorker("completion-no-second-read");
+  const completed = [];
+  let reads = 0;
+  chromeStub.values.todoUnfinishedItems = [{ id: "a", text: "Task A", color: "#fff" }];
+  worker.__setCompletedStoreForTest({
+    async readCompletedData() {
+      reads += 1;
+      return reads === 1
+        ? { ok: true, data: { version: 1, completed: [] } }
+        : { ok: false, reason: "read_failed", message: "Unexpected second read" };
+    },
+    async appendCompletedRecord(record) {
+      completed.push(record);
+      return { ok: true };
+    }
+  });
+
+  const result = await complete(worker, "a", "2026-07-23T09:30:00.000Z");
+
+  assert.equal(result.ok, true);
+  assert.equal(reads, 1);
+  assert.deepEqual(completed, [{ text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" }]);
+  assert.deepEqual(chromeStub.values.todoUnfinishedItems, []);
+});
+
 test("completion recovers an older same-signature pending receipt before completing a new todo", async (t) => {
   const chromeStub = installChromeStub(t);
   const worker = await importWorker("completion-pending-owner");

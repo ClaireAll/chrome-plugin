@@ -176,13 +176,15 @@ async function completeTodoItem(items, item, receipt) {
       };
       receiptItems = withCompletionReceipt(receiptItems, item.id, receipt);
       await saveTodoItems(receiptItems);
-    }
-
-    const countResult = await countCompletedRecords(receipt);
-    if (!countResult.ok) return countResult;
-    if (countResult.count <= receipt.matchingCountBefore) {
       const result = await completedStore().appendCompletedRecord({ text: receipt.text, completedAt: receipt.completedAt });
       if (!result.ok) return result;
+    } else {
+      const countResult = await countCompletedRecords(receipt);
+      if (!countResult.ok) return countResult;
+      if (countResult.count <= receipt.matchingCountBefore) {
+        const result = await completedStore().appendCompletedRecord({ text: receipt.text, completedAt: receipt.completedAt });
+        if (!result.ok) return result;
+      }
     }
 
     receipt = { ...receipt, appendStarted: true, appended: true };

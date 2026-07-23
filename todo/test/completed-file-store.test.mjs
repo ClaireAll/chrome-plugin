@@ -1,0 +1,131 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+test("completed file store creates and writes minimal completed JSON", async () => {
+  const writes = [];
+  globalThis.indexedDB = createIndexedDbStub();
+  globalThis.showSaveFilePicker = async () => createHandle("completed.json", "", writes);
+  globalThis.chrome = createChromeStorage().chrome;
+
+  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-create`);
+  const createResult = await store.createCompletedJsonFile({ fileName: "todo-completed.json" });
+
+  assert.equal(createResult.ok, true);
+  assert.deepEqual(JSON.parse(writes.at(-1)), { version: 1, completed: [] });
+
+  const appendResult = await store.appendCompletedRecordToFile("Task A", "2026-07-23T09:30:00.000Z");
+  assert.equal(appendResult.ok, true);
+  assert.deepEqual(JSON.parse(writes.at(-1)), {
+    version: 1,
+    completed: [{ text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" }]
+  });
+});
+
+test("completed file store reports parse errors without overwriting bad JSON", async () => {
+  const writes = [];
+  globalThis.indexedDB = createIndexedDbStub();
+  globalThis.showOpenFilePicker = async () => [createHandle("bad.json", "{bad", writes)];
+  globalThis.chrome = createChromeStorage().chrome;
+
+  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-bad`);
+  const result = await store.pickCompletedJsonFile();
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "parse_error");
+  assert.equal(writes.length, 0);
+});
+
+function createHandle(name, initialText, writes) {
+  let text = initialText;
+  return {
+    name,
+    async queryPermission() {
+      return "granted";
+    },
+    async requestPermission() {
+      return "granted";
+    },
+    async getFile() {
+      return { async text() { return text; } };
+    },
+    async createWritable() {
+      return {
+        async write(nextText) {
+          text = nextText;
+          writes.push(nextText);
+        },
+        async close() {}
+      };
+    }
+  };
+}
+
+function createChromeStorage(initial = {}) {
+  const storage = { ...initial };
+  return {
+    storage,
+    chrome: {
+      storage: {
+        local: {
+          get(key, callback) {
+            callback({ [key]: storage[key] });
+          },
+          set(value, callback) {
+            Object.assign(storage, value);
+            callback?.();
+          }
+        }
+      }
+    }
+  };
+}
+
+function createIndexedDbStub() {
+  const storeValues = new Map();
+  return {
+    open() {
+      const request = {};
+      const db = {
+        objectStoreNames: {
+          contains() {
+            return true;
+          }
+        },
+        createObjectStore() {},
+        transaction() {
+          return {
+            objectStore() {
+              return {
+                get(key) {
+                  return asyncRequest(storeValues.get(key));
+                },
+                put(value, key) {
+                  storeValues.set(key, value);
+                  return asyncRequest(value);
+                },
+                delete(key) {
+                  storeValues.delete(key);
+                  return asyncRequest(undefined);
+                }
+              };
+            }
+          };
+        }
+      };
+      queueMicrotask(() => {
+        request.result = db;
+        request.onsuccess?.();
+      });
+      return request;
+    }
+  };
+}
+
+function asyncRequest(result) {
+  const request = {};
+  queueMicrotask(() => {
+    request.result = result;
+    request.onsuccess?.();
+  });
+  return request;
+}

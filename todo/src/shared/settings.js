@@ -28,11 +28,12 @@ function sanitizeBallPosition(value) {
   const leftRatio = Number(value.leftRatio);
   const topRatio = Number(value.topRatio);
   if (Number.isFinite(leftRatio) || Number.isFinite(topRatio)) {
+    const edgeSide = side || ratioToSide(leftRatio);
     return {
-      leftRatio: clampRatio(leftRatio),
+      leftRatio: edgeSide === "right" ? 1 : 0,
       topRatio: clampRatio(topRatio),
-      snapped: value.snapped === true,
-      side
+      snapped: true,
+      side: edgeSide
     };
   }
   const left = Number(value.left);
@@ -40,9 +41,13 @@ function sanitizeBallPosition(value) {
   return {
     left: Number.isFinite(left) ? Math.max(0, left) : 0,
     top: Number.isFinite(top) ? Math.max(0, top) : 0,
-    snapped: value.snapped === true,
+    snapped: true,
     side
   };
+}
+
+function ratioToSide(value) {
+  return clampRatio(value) < 0.5 ? "left" : "right";
 }
 
 function clampRatio(value) {

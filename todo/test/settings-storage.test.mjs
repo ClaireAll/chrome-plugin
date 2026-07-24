@@ -4,14 +4,23 @@ import assert from "node:assert/strict";
 test("settings sanitizes ball position and color presets", async () => {
   const { sanitizeSettings } = await import(`../src/shared/settings.js?test=${Date.now()}-sanitize`);
   const settings = sanitizeSettings({
-    ballPosition: { leftRatio: 1.4, topRatio: -0.2, snapped: true, side: "left" },
+    ballPosition: { leftRatio: 1.4, topRatio: -0.2, snapped: false, side: "left" },
     colorPresets: ["#ffffff", "bad", "#dcfce7"],
     defaultColor: "#dcfce7"
   });
 
-  assert.deepEqual(settings.ballPosition, { leftRatio: 1, topRatio: 0, snapped: true, side: "left" });
+  assert.deepEqual(settings.ballPosition, { leftRatio: 0, topRatio: 0, snapped: true, side: "left" });
   assert.deepEqual(settings.colorPresets, ["#ffffff", "#dcfce7"]);
   assert.equal(settings.defaultColor, "#dcfce7");
+});
+
+test("settings snaps ratio ball positions without a side to the nearest edge", async () => {
+  const { sanitizeSettings } = await import(`../src/shared/settings.js?test=${Date.now()}-ratio-edge`);
+  const settings = sanitizeSettings({
+    ballPosition: { leftRatio: 0.6, topRatio: 0.4, snapped: false, side: null }
+  });
+
+  assert.deepEqual(settings.ballPosition, { leftRatio: 1, topRatio: 0.4, snapped: true, side: "right" });
 });
 
 test("settings preserves legacy pixel ball positions for content migration", async () => {
@@ -20,7 +29,7 @@ test("settings preserves legacy pixel ball positions for content migration", asy
     ballPosition: { left: 40, top: 50, snapped: false, side: "right" }
   });
 
-  assert.deepEqual(settings.ballPosition, { left: 40, top: 50, snapped: false, side: "right" });
+  assert.deepEqual(settings.ballPosition, { left: 40, top: 50, snapped: true, side: "right" });
 });
 
 test("storage reads and writes normalized todo state through chrome.storage.local", async () => {

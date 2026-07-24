@@ -17,7 +17,7 @@
 
 #todo-extension-root .todo-shell {
   position: fixed;
-  right: 24px;
+  right: 0;
   top: 50%;
   transform: translateY(-50%);
 }

@@ -15,7 +15,6 @@
     OPEN_OPTIONS: "TODO_OPEN_OPTIONS"
   };
   const DEFAULT_COLORS = ["#ffffff", "#fef3c7", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe"];
-  const EDGE_SNAP_THRESHOLD = 24;
   const PANEL_WIDTH = 320;
   const PANEL_HEIGHT = 560;
   const PANEL_VIEWPORT_MARGIN = 12;
@@ -397,8 +396,10 @@
 
   function moveBallDrag(event) {
     if (!state.ballDrag) return;
-    const left = clamp(state.ballDrag.left + event.clientX - state.ballDrag.startX, 0, window.innerWidth - shell.getBoundingClientRect().width);
-    const top = clamp(state.ballDrag.top + event.clientY - state.ballDrag.startY, 0, window.innerHeight - shell.getBoundingClientRect().height);
+    const rect = shell.getBoundingClientRect();
+    const rawLeft = state.ballDrag.left + event.clientX - state.ballDrag.startX;
+    const left = getEdgeLeft(getEdgeSide(null, rawLeft, rect), rect);
+    const top = clamp(state.ballDrag.top + event.clientY - state.ballDrag.startY, 0, window.innerHeight - rect.height);
     state.ballDragMoved ||= Math.abs(event.clientX - state.ballDrag.startX) > 3 || Math.abs(event.clientY - state.ballDrag.startY) > 3;
     shell.style.left = `${left}px`;
     shell.style.top = `${top}px`;
@@ -414,21 +415,10 @@
       return;
     }
     const rect = shell.getBoundingClientRect();
-    const maxLeft = Math.max(0, window.innerWidth - rect.width);
-    let left = clamp(rect.left, 0, maxLeft);
+    const side = getEdgeSide(null, rect.left, rect);
+    const left = getEdgeLeft(side, rect);
     const top = clamp(rect.top, 0, Math.max(0, window.innerHeight - rect.height));
-    let side = null;
-    let snapped = false;
-    if (left <= EDGE_SNAP_THRESHOLD) {
-      left = 0;
-      side = "left";
-      snapped = true;
-    } else if (maxLeft - left <= EDGE_SNAP_THRESHOLD) {
-      left = maxLeft;
-      side = "right";
-      snapped = true;
-    }
-    const position = createRatioBallPosition(left, top, side, snapped, rect);
+    const position = createRatioBallPosition(left, top, side, rect);
     applyBallPosition(position);
     state.ballDrag = null;
     persistBallPosition(position);
@@ -487,39 +477,53 @@
     if (!position || typeof position !== "object") return null;
     const maxLeft = Math.max(0, window.innerWidth - rect.width);
     const maxTop = Math.max(0, window.innerHeight - rect.height);
-    const side = position.side === "left" || position.side === "right" ? position.side : null;
-    const snapped = position.snapped === true;
+    const savedSide = position.side === "left" || position.side === "right" ? position.side : null;
     const rawLeftRatio = Number(position.leftRatio);
     const rawTopRatio = Number(position.topRatio);
     if (Number.isFinite(rawLeftRatio) || Number.isFinite(rawTopRatio)) {
-      const leftRatio = clampRatio(rawLeftRatio);
+      const side = getEdgeSide(savedSide, clampRatio(rawLeftRatio) * maxLeft, rect);
+      const leftRatio = side === "right" ? 1 : 0;
       const topRatio = clampRatio(rawTopRatio);
+      const normalized = { leftRatio, topRatio, snapped: true, side };
       return {
-        left: Math.round(leftRatio * maxLeft),
+        left: getEdgeLeft(side, rect),
         top: Math.round(topRatio * maxTop),
-        corrected: leftRatio !== rawLeftRatio || topRatio !== rawTopRatio,
-        position: { leftRatio, topRatio, snapped, side }
+        corrected: leftRatio !== rawLeftRatio || topRatio !== rawTopRatio || position.snapped !== true || savedSide !== side,
+        position: normalized
       };
     }
-    const left = clamp(Number(position.left), 0, maxLeft);
+    const rawLeft = clamp(Number(position.left), 0, maxLeft);
+    const side = getEdgeSide(savedSide, rawLeft, rect);
+    const left = getEdgeLeft(side, rect);
     const top = clamp(Number(position.top), 0, maxTop);
     return {
       left,
       top,
       corrected: true,
-      position: createRatioBallPosition(left, top, side, snapped, rect)
+      position: createRatioBallPosition(left, top, side, rect)
     };
   }
 
-  function createRatioBallPosition(left, top, side, snapped, rect = shell.getBoundingClientRect()) {
-    const maxLeft = Math.max(0, window.innerWidth - rect.width);
+  function createRatioBallPosition(left, top, side, rect = shell.getBoundingClientRect()) {
     const maxTop = Math.max(0, window.innerHeight - rect.height);
+    const edgeSide = getEdgeSide(side, left, rect);
     return {
-      leftRatio: maxLeft > 0 ? clamp(left, 0, maxLeft) / maxLeft : 0,
+      leftRatio: edgeSide === "right" ? 1 : 0,
       topRatio: maxTop > 0 ? clamp(top, 0, maxTop) / maxTop : 0,
-      snapped: snapped === true,
-      side
+      snapped: true,
+      side: edgeSide
     };
+  }
+
+  function getEdgeSide(side, left, rect) {
+    if (side === "left" || side === "right") return side;
+    const maxLeft = Math.max(0, window.innerWidth - rect.width);
+    return clamp(left, 0, maxLeft) < maxLeft / 2 ? "left" : "right";
+  }
+
+  function getEdgeLeft(side, rect) {
+    const maxLeft = Math.max(0, window.innerWidth - rect.width);
+    return side === "right" ? maxLeft : 0;
   }
 
   function persistClampedBallPosition() {

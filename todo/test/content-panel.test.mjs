@@ -179,6 +179,28 @@ test("clicking the ball does not snap it but dragging does", async () => {
   assert.equal("top" in persisted, false);
 });
 
+test("dragging the ball into the page snaps it to the nearest edge", async () => {
+  const { context, messages, document } = createContentContext();
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+
+  const ball = document.elements[".todo-ball"];
+  ball.dispatch("pointerdown", { clientX: 10, clientY: 10, pointerId: 3 });
+  ball.dispatch("pointermove", { clientX: 700, clientY: 110, pointerId: 3 });
+  ball.dispatch("pointerup", { clientX: 700, clientY: 110, pointerId: 3 });
+  await delay(0);
+
+  assert.equal(document.elements[".todo-shell"].style.left, "1152px");
+  const persisted = messages.find((message) => message.type === "TODO_UPDATE_SETTINGS")?.payload.ballPosition;
+  assert.equal(persisted?.leftRatio, 1);
+  assert.equal(persisted?.topRatio, 100 / 752);
+  assert.equal(persisted?.snapped, true);
+  assert.equal(persisted?.side, "right");
+});
+
 test("restored ratio ball positions are reapplied after the viewport changes", async () => {
   const { context, document, messages } = createContentContext({
     settings: { ballPosition: { leftRatio: 0.5, topRatio: 0.25, snapped: false, side: null } }
@@ -189,16 +211,20 @@ test("restored ratio ball positions are reapplied after the viewport changes", a
   });
   await delay(0);
 
-  assert.equal(document.elements[".todo-shell"].style.left, "576px");
+  assert.equal(document.elements[".todo-shell"].style.left, "1152px");
   assert.equal(document.elements[".todo-shell"].style.top, "188px");
 
   context.window.innerWidth = 600;
   context.window.innerHeight = 400;
   context.window.dispatch("resize");
 
-  assert.equal(document.elements[".todo-shell"].style.left, "276px");
+  assert.equal(document.elements[".todo-shell"].style.left, "552px");
   assert.equal(document.elements[".todo-shell"].style.top, "88px");
-  assert.equal(messages.filter((message) => message.type === "TODO_UPDATE_SETTINGS").length, 0);
+  const corrected = messages.find((message) => message.type === "TODO_UPDATE_SETTINGS")?.payload.ballPosition;
+  assert.equal(corrected?.leftRatio, 1);
+  assert.equal(corrected?.topRatio, 0.25);
+  assert.equal(corrected?.snapped, true);
+  assert.equal(corrected?.side, "right");
 });
 
 test("legacy pixel ball positions are clamped and migrated to ratios", async () => {
@@ -218,8 +244,8 @@ test("legacy pixel ball positions are clamped and migrated to ratios", async () 
   assert.equal(corrected?.topRatio, 1);
   assert.equal("left" in corrected, false);
   assert.equal("top" in corrected, false);
-  assert.equal(corrected?.snapped, false);
-  assert.equal(corrected?.side, null);
+  assert.equal(corrected?.snapped, true);
+  assert.equal(corrected?.side, "right");
 });
 
 test("storage changes refresh the unfinished count on an injected page", async () => {
@@ -444,7 +470,19 @@ class ElementStub {
   setPointerCapture() {}
   releasePointerCapture() {}
   getBoundingClientRect() {
-    return this.rects[this.selector] || { left: 0, top: 0, width: 48, height: 48, right: 48, bottom: 48 };
+    const base = this.rects[this.selector] || { left: 0, top: 0, width: 48, height: 48, right: 48, bottom: 48 };
+    const left = Number.parseFloat(this.style.left);
+    const top = Number.parseFloat(this.style.top);
+    if (!Number.isFinite(left) && !Number.isFinite(top)) return base;
+    const nextLeft = Number.isFinite(left) ? left : base.left;
+    const nextTop = Number.isFinite(top) ? top : base.top;
+    return {
+      ...base,
+      left: nextLeft,
+      top: nextTop,
+      right: nextLeft + base.width,
+      bottom: nextTop + base.height
+    };
   }
 }
 

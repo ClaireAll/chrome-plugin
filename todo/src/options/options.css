@@ -1,0 +1,145 @@
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f7f7f5;
+  color: #1f2933;
+}
+
+.todo-options-shell {
+  width: min(1180px, calc(100vw - 48px));
+  margin: 0 auto;
+  padding: 32px 0;
+}
+
+.todo-options-shell h1,
+.todo-options-shell h2 {
+  margin: 0;
+}
+
+.todo-options-shell h1 {
+  font-size: 24px;
+}
+
+.todo-options-shell h2 {
+  font-size: 16px;
+}
+
+.options-section,
+#weeklySummary {
+  border-top: 1px solid #d9ded9;
+  margin-top: 24px;
+  padding-top: 16px;
+}
+
+.section-heading,
+.control-row,
+.completed-row,
+.color-preset-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-heading {
+  justify-content: space-between;
+}
+
+button,
+input {
+  border: 1px solid #aeb8b1;
+  border-radius: 4px;
+  font: inherit;
+}
+
+button {
+  background: #ffffff;
+  color: #1f2933;
+  cursor: pointer;
+  padding: 6px 10px;
+}
+
+button:hover {
+  background: #edf3ee;
+}
+
+input {
+  background: #ffffff;
+  padding: 6px 8px;
+}
+
+#completedSearch {
+  width: min(280px, 48vw);
+}
+
+.status-text,
+.completed-time,
+.empty-state {
+  color: #617066;
+  font-size: 13px;
+}
+
+.completed-list {
+  margin-top: 12px;
+}
+
+.completed-row {
+  border-bottom: 1px solid #e1e6e2;
+  padding: 8px 0;
+}
+
+.completed-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.completed-time {
+  min-width: 156px;
+}
+
+.color-preset-list {
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.color-preset-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.color-swatch {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #7e8d82;
+  border-radius: 4px;
+  padding: 0;
+}
+
+.icon-button {
+  min-width: 28px;
+  padding: 4px 7px;
+}
+
+#weeklyChart {
+  min-height: 180px;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .todo-options-shell {
+    width: min(100% - 24px, 1180px);
+    padding: 20px 0;
+  }
+
+  .section-heading,
+  .control-row,
+  .completed-row {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .completed-time {
+    min-width: 0;
+    width: 100%;
+  }
+}

@@ -63,6 +63,26 @@ test("content ball displays unfinished count and toggles the panel", async () =>
   assert.equal(document.elements[".todo-panel"].hidden, false);
 });
 
+test("clicking outside the panel closes the open panel", async () => {
+  const { context, document } = createContentContext({
+    items: [{ id: "a", text: "Task A" }]
+  });
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+
+  document.elements[".todo-ball"].dispatch("click", {});
+  await delay(0);
+  assert.equal(document.elements[".todo-panel"].hidden, false);
+
+  document.dispatch("pointerdown", { target: { nodeType: 1 } });
+  await delay(0);
+
+  assert.equal(document.elements[".todo-panel"].hidden, true);
+});
+
 test("panel opens fully inside an ordinary viewport", async () => {
   const { context, document } = createContentContext({
     items: [{ id: "a", text: "Task A" }]
@@ -386,10 +406,12 @@ function createDocumentStub(options = {}) {
 
   return {
     elements,
+    listeners: {},
     documentElement: { appendChild(node) { node.parentNode = this; } },
     getElementById() { return null; },
     createElement(tagName) { return new ElementStub(tagName, elements); },
-    addEventListener() {}
+    addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); },
+    dispatch(type, event = {}) { for (const listener of this.listeners[type] || []) listener(event); }
   };
 }
 

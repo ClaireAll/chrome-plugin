@@ -117,6 +117,7 @@
     event.preventDefault();
     runSafely(addTodo());
   });
+  document.addEventListener("pointerdown", handleDocumentPointerDown, true);
   list.addEventListener("click", handleListClick);
   list.addEventListener("change", handleListChange);
   list.addEventListener("keydown", handleListKeydown);
@@ -283,6 +284,13 @@
     state.items = response.items;
     render();
     return true;
+  }
+
+  function handleDocumentPointerDown(event) {
+    if (!state.isOpen) return;
+    const target = event.target;
+    if (target && (root.contains(target) || shell.contains(target) || ball.contains(target) || panel.contains(target))) return;
+    runSafely(togglePanel(false));
   }
 
   function handleListClick(event) {

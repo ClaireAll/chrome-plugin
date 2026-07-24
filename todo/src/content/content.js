@@ -39,8 +39,19 @@
   root.id = "todo-extension-root";
   root.innerHTML = `
     <div class="todo-shell">
-      <button class="todo-ball" type="button" title="todo" aria-label="todo"></button>
+      <button class="todo-ball" type="button" title="待办" aria-label="未完成待办 0 项">
+        <span class="todo-ball-tick todo-ball-tick--teal" aria-hidden="true"></span>
+        <span class="todo-ball-tick todo-ball-tick--coral" aria-hidden="true"></span>
+        <span class="todo-ball-count" aria-hidden="true"></span>
+      </button>
       <section class="todo-panel" hidden>
+        <header class="todo-panel-header">
+          <div>
+            <p class="todo-panel-eyebrow">快速任务</p>
+            <h2>我的待办</h2>
+          </div>
+          <span class="todo-panel-count"></span>
+        </header>
         <form class="todo-create-form">
           <input class="todo-create-input" autocomplete="off" />
         </form>
@@ -53,7 +64,9 @@
 
   const shell = root.querySelector(".todo-shell");
   const ball = root.querySelector(".todo-ball");
+  const ballCount = root.querySelector(".todo-ball-count");
   const panel = root.querySelector(".todo-panel");
+  const panelCount = root.querySelector(".todo-panel-count");
   const createForm = root.querySelector(".todo-create-form");
   const createInput = root.querySelector(".todo-create-input");
   const list = root.querySelector(".todo-list");
@@ -119,7 +132,10 @@
   }
 
   function render() {
-    ball.textContent = String(state.items.length);
+    const unfinishedCount = state.items.length;
+    ballCount.textContent = String(unfinishedCount);
+    ball.setAttribute("aria-label", `未完成待办 ${unfinishedCount} 项`);
+    panelCount.textContent = `${unfinishedCount} 项待办`;
     renderList();
   }
 

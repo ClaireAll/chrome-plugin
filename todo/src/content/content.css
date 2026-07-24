@@ -1,9 +1,18 @@
 #todo-extension-root {
+  --todo-ink: #18212f;
+  --todo-surface: #ffffff;
+  --todo-cobalt: #2563eb;
+  --todo-teal: #0f766e;
+  --todo-coral: #e76f51;
+  --todo-slate: #64748b;
+  --todo-divider: #dde3ec;
+  --todo-panel-header-height: 72px;
+  --todo-create-band-height: 68px;
   all: initial;
   position: fixed;
   z-index: 2147483647;
   font-family: Arial, sans-serif;
-  color: #18212f;
+  color: var(--todo-ink);
 }
 
 #todo-extension-root .todo-shell {
@@ -14,17 +23,51 @@
 }
 
 #todo-extension-root .todo-ball {
+  box-sizing: border-box;
+  position: relative;
   display: grid;
   width: 48px;
   height: 48px;
   place-items: center;
-  border: 1px solid #0f766e;
+  border: 3px solid #2563eb;
   border-radius: 50%;
-  background: #14b8a6;
-  color: #ffffff;
+  background: var(--todo-surface);
+  color: var(--todo-ink);
   cursor: pointer;
   font: 700 16px/1 Arial, sans-serif;
-  box-shadow: 0 6px 18px rgb(15 118 110 / 28%);
+  box-shadow: 0 5px 14px rgb(24 33 47 / 18%);
+}
+
+#todo-extension-root .todo-ball-tick {
+  position: absolute;
+  width: 3px;
+  height: 10px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+#todo-extension-root .todo-ball-tick--teal {
+  top: 3px;
+  right: 10px;
+  background: var(--todo-teal);
+  transform: rotate(34deg);
+}
+
+#todo-extension-root .todo-ball-tick--coral {
+  bottom: 3px;
+  left: 10px;
+  background: var(--todo-coral);
+  transform: rotate(34deg);
+}
+
+#todo-extension-root .todo-ball:hover {
+  border-color: #1d4ed8;
+  box-shadow: 0 7px 16px rgb(37 99 235 / 24%);
+}
+
+#todo-extension-root .todo-ball:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 35%);
+  outline-offset: 3px;
 }
 
 #todo-extension-root .todo-panel {
@@ -37,48 +80,90 @@
   width: min(420px, calc(100vw - 24px));
   height: min(560px, calc(100vh - 24px));
   overflow: hidden;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--todo-divider);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 16px 40px rgb(15 23 42 / 22%);
+  background: var(--todo-surface);
+  box-shadow: 0 16px 40px rgb(24 33 47 / 18%);
+}
+
+#todo-extension-root .todo-panel-header {
+  box-sizing: border-box;
+  display: flex;
+  height: var(--todo-panel-header-height);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--todo-divider);
+}
+
+#todo-extension-root .todo-panel-eyebrow {
+  margin: 0 0 3px;
+  color: var(--todo-slate);
+  font: 600 11px/1 Arial, sans-serif;
+  letter-spacing: 0;
+}
+
+#todo-extension-root .todo-panel-header h2 {
+  margin: 0;
+  color: var(--todo-ink);
+  font: 700 18px/1.2 Arial, sans-serif;
+}
+
+#todo-extension-root .todo-panel-count {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  border: 1px solid var(--todo-divider);
+  border-radius: 6px;
+  color: var(--todo-slate);
+  font: 600 12px/1 Arial, sans-serif;
 }
 
 #todo-extension-root .todo-create-form {
+  box-sizing: border-box;
+  height: var(--todo-create-band-height);
   padding: 14px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--todo-divider);
+  background: #f6f8fb;
 }
 
 #todo-extension-root .todo-create-input {
   box-sizing: border-box;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #94a3b8;
+  border: 1px solid #b9c4d2;
   border-radius: 5px;
-  color: #18212f;
+  background: var(--todo-surface);
+  color: var(--todo-ink);
   font: 14px/1.35 Arial, sans-serif;
+}
+
+#todo-extension-root .todo-create-input:focus {
+  border-color: var(--todo-cobalt);
+  outline: 2px solid rgb(37 99 235 / 22%);
+  outline-offset: 1px;
 }
 
 #todo-extension-root .todo-list {
   box-sizing: border-box;
-  height: calc(100% - 67px);
+  height: calc(100% - var(--todo-panel-header-height) - var(--todo-create-band-height));
   overflow: auto;
-  padding: 10px;
+  background: var(--todo-surface);
 }
 
 #todo-extension-root .todo-item {
   box-sizing: border-box;
-  margin-bottom: 8px;
-  border: 1px solid #d8dee8;
-  border-left: 5px solid var(--todo-color, #ffffff);
-  border-radius: 6px;
-  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid var(--todo-divider);
+  border-left: 4px solid var(--todo-color, #ffffff);
+  background: var(--todo-surface);
 }
 
 #todo-extension-root .todo-item-main {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 9px;
+  padding: 10px;
 }
 
 #todo-extension-root .todo-text {
@@ -86,14 +171,14 @@
   flex: 1;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  color: #18212f;
+  color: var(--todo-ink);
   font: 14px/1.4 Arial, sans-serif;
   outline: none;
 }
 
 #todo-extension-root .todo-item-actions {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 0 124px;
   gap: 4px;
 }
 
@@ -101,9 +186,9 @@
 #todo-extension-root .todo-color-choice,
 #todo-extension-root .todo-reminder-clear {
   box-sizing: border-box;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--todo-divider);
   border-radius: 4px;
-  background: #ffffff;
+  background: var(--todo-surface);
   color: #334155;
   cursor: pointer;
 }
@@ -124,7 +209,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 9px 9px;
+  padding: 0 10px 10px;
+  border-bottom: 1px solid var(--todo-divider);
 }
 
 #todo-extension-root .todo-color-choice {
@@ -137,18 +223,18 @@
   min-width: 0;
   flex: 1;
   padding: 5px;
-  border: 1px solid #94a3b8;
+  border: 1px solid #b9c4d2;
   border-radius: 4px;
-  color: #18212f;
+  color: var(--todo-ink);
 }
 
 #todo-extension-root .todo-reminder-clear { padding: 5px 8px; }
 
-#todo-extension-root .todo-drag-over { outline: 2px solid #14b8a6; }
+#todo-extension-root .todo-drag-over { outline: 2px solid var(--todo-teal); }
 
 #todo-extension-root .todo-empty {
   padding: 24px 8px;
-  color: #64748b;
+  color: var(--todo-slate);
   text-align: center;
   font: 14px/1.4 Arial, sans-serif;
 }
@@ -158,9 +244,10 @@
   box-sizing: border-box;
   width: 300px;
   padding: 10px 12px;
-  border-radius: 5px;
-  background: #b91c1c;
-  color: #ffffff;
+  border: 1px solid #f3a191;
+  border-radius: 6px;
+  background: #fff1ee;
+  color: #9a3412;
   font: 13px/1.35 Arial, sans-serif;
-  box-shadow: 0 6px 16px rgb(15 23 42 / 22%);
+  box-shadow: 0 6px 16px rgb(24 33 47 / 16%);
 }

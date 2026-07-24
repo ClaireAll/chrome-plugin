@@ -3,6 +3,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
+test("content source exposes the instrument launcher and panel summary", () => {
+  const source = readFileSync("src/content/content.js", "utf8");
+
+  assert.match(source, /class="todo-ball-count"/);
+  assert.match(source, /class="todo-ball-tick todo-ball-tick--teal"/);
+  assert.match(source, /class="todo-ball-tick todo-ball-tick--coral"/);
+  assert.match(source, /class="todo-panel-header"/);
+  assert.match(source, /class="todo-panel-count"/);
+  assert.match(source, /ball\.setAttribute\("aria-label", `未完成待办 \$\{unfinishedCount\} 项`\)/);
+});
+
 test("content ball displays unfinished count and toggles the panel", async () => {
   const { context, document } = createContentContext({
     items: [{ id: "a", text: "Task A" }, { id: "b", text: "Task B" }]
@@ -13,7 +24,9 @@ test("content ball displays unfinished count and toggles the panel", async () =>
   });
   await delay(0);
 
-  assert.equal(document.elements[".todo-ball"].textContent, "2");
+  assert.equal(document.elements[".todo-ball-count"].textContent, "2");
+  assert.equal(document.elements[".todo-panel-count"].textContent, "2 项待办");
+  assert.equal(document.elements[".todo-ball"].attributes["aria-label"], "未完成待办 2 项");
   document.elements[".todo-ball"].dispatch("click", {});
   await delay(0);
   assert.equal(document.elements[".todo-panel"].hidden, false);
@@ -143,7 +156,7 @@ test("storage changes refresh the unfinished count on an injected page", async (
   dispatchStorageChange({ todoUnfinishedItems: { newValue: [] } });
   await delay(0);
 
-  assert.equal(document.elements[".todo-ball"].textContent, "2");
+  assert.equal(document.elements[".todo-ball-count"].textContent, "2");
 });
 
 test("closing the panel persists a local reorder", async () => {
@@ -306,7 +319,7 @@ function createContentContext(options = {}) {
 
 function createDocumentStub(options = {}) {
   const elements = Object.fromEntries([
-    ".todo-shell", ".todo-ball", ".todo-panel", ".todo-create-form", ".todo-create-input", ".todo-list", ".todo-toast"
+    ".todo-shell", ".todo-ball", ".todo-ball-count", ".todo-panel", ".todo-panel-count", ".todo-create-form", ".todo-create-input", ".todo-list", ".todo-toast"
   ].map((selector) => [selector, new ElementStub("div", null, selector, options.rects || {})]));
   for (const element of Object.values(elements)) element.elements = elements;
   elements[".todo-panel"].hidden = true;
@@ -328,6 +341,7 @@ class ElementStub {
     this.selector = selector;
     this.rects = rects;
     this.dataset = {};
+    this.attributes = {};
     this.listeners = {};
     this.style = { setProperty() {} };
     this.classList = { add() {}, remove() {}, toggle() {} };
@@ -342,6 +356,7 @@ class ElementStub {
   querySelector(selector) { return this.elements[selector] || new ElementStub("div", this.elements, selector, this.rects); }
   contains(target) { return target === this || target?.parentNode === this; }
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  setAttribute(name, value) { this.attributes[name] = value; }
   dispatch(type, event = {}) { for (const listener of this.listeners[type] || []) listener(event); }
   focus() {}
   select() {}

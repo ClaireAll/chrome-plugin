@@ -46,6 +46,14 @@ test("options rail wraps controls and long completed-file status text", () => {
   assert.match(css, /\.status-text\s*\{[\s\S]*min-width:\s*0[\s\S]*overflow-wrap:\s*anywhere/);
 });
 
+test("options buttons retain an explicit keyboard focus indicator", () => {
+  const css = readFileSync("src/options/options.css", "utf8");
+
+  assert.match(css, /#createCompletedFile:focus-visible,[\s\S]*outline:\s*3px solid #0f172a/i);
+  assert.match(css, /button:focus-visible\s*\{[\s\S]*outline:\s*3px solid #0f172a/i);
+  assert.doesNotMatch(css, /button:hover,\s*button:focus-visible\s*\{[\s\S]*outline:\s*none/);
+});
+
 test("options page invokes completed-file picker APIs directly from click handlers", () => {
   const source = readFileSync("src/options/options.js", "utf8");
   const workerSource = readFileSync("src/background/service-worker.js", "utf8");

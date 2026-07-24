@@ -126,20 +126,33 @@ button {
 }
 
 #createCompletedFile:hover,
-#createCompletedFile:focus-visible,
-#addColorPreset:hover,
-#addColorPreset:focus-visible {
+#addColorPreset:hover {
   background: #1D4ED8;
   border-color: #1D4ED8;
   color: #FFFFFF;
 }
 
-button:hover,
+#createCompletedFile:focus-visible,
+#addColorPreset:focus-visible {
+  background: #1D4ED8;
+  border-color: #1D4ED8;
+  color: #FFFFFF;
+  outline: 3px solid #0F172A;
+  outline-offset: 2px;
+}
+
+button:hover {
+  background: #EFF6FF;
+  border-color: #2563EB;
+  color: #1D4ED8;
+}
+
 button:focus-visible {
   background: #EFF6FF;
   border-color: #2563EB;
   color: #1D4ED8;
-  outline: none;
+  outline: 3px solid #0F172A;
+  outline-offset: 2px;
 }
 
 input {

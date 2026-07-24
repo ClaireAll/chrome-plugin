@@ -66,8 +66,9 @@
 }
 
 #todo-extension-root .todo-ball:focus-visible {
-  outline: 3px solid rgb(37 99 235 / 35%);
-  outline-offset: 3px;
+  outline: 3px solid #0f172a;
+  outline-offset: 4px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 5px #0f172a;
 }
 
 #todo-extension-root .todo-panel {
@@ -121,6 +122,9 @@
 
 #todo-extension-root .todo-create-form {
   box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
   height: var(--todo-create-band-height);
   padding: 14px;
   border-bottom: 1px solid var(--todo-divider);
@@ -142,6 +146,27 @@
   border-color: var(--todo-cobalt);
   outline: 2px solid rgb(37 99 235 / 22%);
   outline-offset: 1px;
+}
+
+#todo-extension-root .todo-create-submit {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--todo-cobalt);
+  border-radius: 5px;
+  background: var(--todo-cobalt);
+  color: #fff;
+  cursor: pointer;
+  font: 700 13px/1 Arial, sans-serif;
+}
+
+#todo-extension-root .todo-create-submit:hover {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+}
+
+#todo-extension-root .todo-create-submit:focus-visible {
+  outline: 3px solid #0f172a;
+  outline-offset: 2px;
 }
 
 #todo-extension-root .todo-list {

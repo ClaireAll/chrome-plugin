@@ -14,6 +14,13 @@ test("content source exposes the instrument launcher and panel summary", () => {
   assert.match(source, /ball\.setAttribute\("aria-label", `未完成待办 \$\{unfinishedCount\} 项`\)/);
 });
 
+test("content source exposes an accessible add button and alert toast", () => {
+  const source = readFileSync("src/content/content.js", "utf8");
+
+  assert.match(source, /<button class="todo-create-submit" type="submit" aria-label="添加待办">添加<\/button>/);
+  assert.match(source, /<div class="todo-toast" role="alert" aria-live="assertive" aria-atomic="true" hidden><\/div>/);
+});
+
 test("content ball displays unfinished count and toggles the panel", async () => {
   const { context, document } = createContentContext({
     items: [{ id: "a", text: "Task A" }, { id: "b", text: "Task B" }]

@@ -54,10 +54,11 @@
         </header>
         <form class="todo-create-form">
           <input class="todo-create-input" autocomplete="off" />
+          <button class="todo-create-submit" type="submit" aria-label="添加待办">添加</button>
         </form>
         <div class="todo-list"></div>
       </section>
-      <div class="todo-toast" hidden></div>
+      <div class="todo-toast" role="alert" aria-live="assertive" aria-atomic="true" hidden></div>
     </div>
   `;
   document.documentElement.appendChild(root);

@@ -18,6 +18,10 @@ test("content CSS scopes styles and fixes panel dimensions", () => {
   assert.match(css, /\.todo-ball-tick--coral/);
   assert.match(css, /\.todo-panel-header/);
   assert.match(css, /\.todo-create-input:focus/);
+  assert.match(css, /\.todo-ball:focus-visible\s*\{[\s\S]*outline:\s*3px solid #0f172a[\s\S]*outline-offset:\s*4px/i);
+  assert.match(css, /\.todo-ball:focus-visible\s*\{[\s\S]*box-shadow:\s*0 0 0 2px #fff,\s*0 0 0 5px #0f172a/i);
+  assert.match(css, /\.todo-create-form\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
+  assert.match(css, /\.todo-create-submit:focus-visible\s*\{[\s\S]*outline:\s*3px solid #0f172a/i);
   assert.doesNotMatch(css, /gradient/i);
   assert.equal(css.includes("body {"), false);
 });

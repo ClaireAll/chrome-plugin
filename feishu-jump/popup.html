@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Feishu Task Jumper</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup">
+      <form id="jumpForm" class="section">
+        <label class="label" for="taskKey">任务 key</label>
+        <div class="row">
+          <input
+            id="taskKey"
+            class="input"
+            name="taskKey"
+            type="text"
+            placeholder="m-7040569864"
+            autocomplete="off"
+            required
+            autofocus
+          >
+          <button class="button button-primary" type="submit">打开</button>
+        </div>
+      </form>
+    </main>
+
+    <script src="src/urlBuilder.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

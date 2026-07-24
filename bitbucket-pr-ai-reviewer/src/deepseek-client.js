@@ -3,6 +3,7 @@ import {
   buildReviewPrompt,
   buildVisualEvidencePrompt,
   extractChatCompletionText,
+  extractResponseText,
   parseFindingFeedbackResponse,
   parseReviewResponse,
   parseVisualEvidenceResponse
@@ -39,12 +40,11 @@ export async function reviewDiffChunk({
     visualEvidence
   });
 
-  const text = await requestJsonCompletion(settings, prompt, { signal });
-  const findings = parseReviewResponse(text);
+  const { value: findings, rawText } = await requestStructuredCompletion(settings, prompt, parseReviewResponse, { signal });
 
   return {
     findings,
-    rawText: text
+    rawText
   };
 }
 
@@ -75,17 +75,17 @@ export async function reviewFindingFeedback({
     reviewRules: settings.reviewRules
   });
 
-  const text = await requestJsonCompletion(settings, prompt, { images, signal });
+  const { value, rawText } = await requestStructuredCompletion(settings, prompt, parseFindingFeedbackResponse, { images, signal });
   return {
-    ...parseFindingFeedbackResponse(text),
-    rawText: text
+    ...value,
+    rawText
   };
 }
 
 export async function extractVisualEvidence({ settings, feedback, images, signal }) {
   const prompt = buildVisualEvidencePrompt({ feedback });
-  const text = await requestJsonCompletion(settings, prompt, { images, signal });
-  return parseVisualEvidenceResponse(text);
+  const { value } = await requestStructuredCompletion(settings, prompt, parseVisualEvidenceResponse, { images, signal });
+  return value;
 }
 
 export function buildChatCompletionBody(settings, prompt, images = []) {
@@ -102,6 +102,7 @@ export function buildChatCompletionBody(settings, prompt, images = []) {
       }
     ],
     temperature: 0.1,
+    max_tokens: 8192,
     response_format: {
       type: "json_object"
     }
@@ -124,7 +125,33 @@ async function requestJsonCompletion(settings, prompt, { images = [], signal } =
   }
 
   const payload = await response.json();
-  return extractChatCompletionText(payload);
+  const text = extractChatCompletionText(payload) || extractResponseText(payload);
+  if (text) return text;
+
+  const finishReason = payload?.choices?.[0]?.finish_reason;
+  const reason = finishReason ? `，finish_reason=${finishReason}` : "";
+  throw new Error(`DeepSeek 未返回评审内容${reason}。`);
+}
+
+async function requestStructuredCompletion(settings, prompt, parser, options = {}) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const rawText = await requestJsonCompletion(settings, prompt, options);
+      return { value: parser(rawText), rawText };
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      lastError = error;
+      if (attempt > 0 || !isRetryableStructuredResponseError(error)) throw error;
+    }
+  }
+
+  throw lastError;
+}
+
+function isRetryableStructuredResponseError(error) {
+  return /DeepSeek (?:未返回|返回的.*JSON 格式异常)/.test(String(error?.message || error));
 }
 
 async function formatDeepSeekError(response, hasImages = false) {

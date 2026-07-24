@@ -18,12 +18,10 @@ const elements = {
   weeklyChart: document.getElementById("weeklyChart")
 };
 
-const COLOR_PICKER_OPTIONS = ["#2563eb", "#14b8a6", "#f97316", "#8b5cf6", "#ef4444", "#facc15", "#ffffff"];
 let completedData = { completed: [] };
 let completedStatus = null;
 let completedMutationBusy = false;
 let settings = { colorPresets: [] };
-let activeColorPreset = "";
 let chart = null;
 
 function sendMessage(type, payload = {}) {
@@ -89,13 +87,21 @@ function renderColorPresets() {
   for (const color of settings.colorPresets || []) {
     const item = document.createElement("div");
     item.className = "color-preset-item";
-    const swatch = createButton("", "color-swatch", () => toggleColorPicker(color));
-    swatch.style.backgroundColor = color;
+    const swatch = document.createElement("input");
+    swatch.type = "color";
+    swatch.className = "color-swatch";
+    swatch.value = normalizePickerColor(color);
     swatch.title = `编辑 ${color}`;
     swatch.setAttribute("aria-label", `编辑颜色 ${color}`);
-    swatch.setAttribute("aria-expanded", activeColorPreset === color ? "true" : "false");
-    item.append(swatch, createButton("删除", "icon-button", () => deleteColorPreset(color)));
-    if (activeColorPreset === color) item.append(renderColorPickerMenu(color));
+    swatch.addEventListener("change", () => applyColorPreset(color, swatch.value));
+
+    const deleteButton = createButton("x", "color-preset-delete", (event) => {
+      event?.stopPropagation?.();
+      deleteColorPreset(color);
+    });
+    deleteButton.title = `删除 ${color}`;
+    deleteButton.setAttribute("aria-label", `删除颜色 ${color}`);
+    item.append(swatch, deleteButton);
     elements.colorPresetList.append(item);
   }
 }
@@ -107,48 +113,31 @@ async function updateColorPresets(colorPresets) {
   renderColorPresets();
 }
 
-function toggleColorPicker(color) {
-  activeColorPreset = activeColorPreset === color ? "" : color;
-  renderColorPresets();
-}
-
-function renderColorPickerMenu(color) {
-  const menu = document.createElement("div");
-  menu.className = "color-picker-menu";
-  menu.setAttribute("role", "menu");
-  const picker = document.createElement("input");
-  picker.type = "color";
-  picker.className = "color-picker-input";
-  picker.value = normalizePickerColor(color);
-  picker.setAttribute("aria-label", "选择颜色");
-  picker.addEventListener("change", () => applyColorPreset(color, picker.value));
-  const choices = document.createElement("div");
-  choices.className = "color-picker-choices";
-  for (const choice of COLOR_PICKER_OPTIONS) {
-    const button = createButton("", "color-picker-choice", () => applyColorPreset(color, choice));
-    button.style.backgroundColor = choice;
-    button.title = choice;
-    button.setAttribute("aria-label", `选择 ${choice}`);
-    choices.append(button);
-  }
-  menu.append(picker, choices);
-  return menu;
-}
-
 function applyColorPreset(color, nextColor) {
   const normalizedColor = normalizePickerColor(nextColor);
   if (normalizedColor === color) return;
-  activeColorPreset = "";
-  updateColorPresets(settings.colorPresets.map((item) => item === color ? normalizedColor : item));
+  const colorPresets = [...(settings.colorPresets || [])];
+  const colorIndex = colorPresets.indexOf(color);
+  if (colorIndex < 0) return;
+  colorPresets[colorIndex] = normalizedColor;
+  updateColorPresets(colorPresets);
 }
 
 function deleteColorPreset(color) {
-  if (activeColorPreset === color) activeColorPreset = "";
   updateColorPresets(settings.colorPresets.filter((item) => item !== color));
 }
 
 function normalizePickerColor(color) {
   return /^#[0-9a-f]{6}$/i.test(color || "") ? color.toLowerCase() : "#ffffff";
+}
+
+function randomColorPreset() {
+  const bytes = new Uint8Array(3);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+    return `#${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  }
+  return `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0")}`;
 }
 
 function renderWeeklySummary() {
@@ -264,8 +253,7 @@ elements.requestCompletedPermission.addEventListener("click", async () => {
   else elements.completedFileStatus.textContent = result.message;
 });
 elements.addColorPreset.addEventListener("click", () => {
-  const color = globalThis.prompt("颜色值", "#ffffff");
-  if (color) updateColorPresets([...(settings.colorPresets || []), color]);
+  updateColorPresets([...(settings.colorPresets || []), randomColorPreset()]);
 });
 globalThis.addEventListener("resize", () => chart?.resize());
 

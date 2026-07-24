@@ -118,21 +118,18 @@ button {
   padding: 6px 10px;
 }
 
-#createCompletedFile,
 #addColorPreset {
   background: #2563EB;
   border-color: #2563EB;
   color: #FFFFFF;
 }
 
-#createCompletedFile:hover,
 #addColorPreset:hover {
   background: #1D4ED8;
   border-color: #1D4ED8;
   color: #FFFFFF;
 }
 
-#createCompletedFile:focus-visible,
 #addColorPreset:focus-visible {
   background: #1D4ED8;
   border-color: #1D4ED8;
@@ -215,10 +212,10 @@ input:focus-visible {
 }
 
 .color-preset-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   position: relative;
+  display: block;
+  width: 28px;
+  height: 28px;
 }
 
 .color-swatch {
@@ -228,6 +225,8 @@ input:focus-visible {
   border: 1px solid #94A3B8;
   border-radius: 6px;
   padding: 0;
+  overflow: hidden;
+  cursor: pointer;
 }
 
 .color-swatch:focus-visible {
@@ -235,40 +234,44 @@ input:focus-visible {
   outline-offset: 2px;
 }
 
-.color-picker-menu {
-  position: absolute;
-  top: 34px;
-  left: 0;
-  z-index: 2;
-  display: grid;
-  gap: 8px;
-  width: 168px;
-  box-sizing: border-box;
-  padding: 10px;
-  border: 1px solid #DDE3EC;
-  border-radius: 8px;
-  background: #FFFFFF;
-  box-shadow: 0 12px 28px rgb(24 33 47 / 16%);
-}
-
-.color-picker-input {
-  width: 100%;
-  height: 34px;
-  padding: 2px;
-}
-
-.color-picker-choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.color-picker-choice {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
+.color-swatch::-webkit-color-swatch-wrapper {
   padding: 0;
-  border-color: #CBD5E1;
+}
+
+.color-swatch::-webkit-color-swatch {
+  border: 0;
+  border-radius: 5px;
+}
+
+.color-preset-delete {
+  position: absolute;
+  right: -5px;
+  top: -5px;
+  display: grid;
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #FFFFFF;
+  border-radius: 999px;
+  background: #0F172A;
+  color: #FFFFFF;
+  cursor: pointer;
+  font: 700 10px/1 Arial, sans-serif;
+  box-shadow: 0 2px 6px rgb(24 33 47 / 20%);
+}
+
+.color-preset-delete:hover {
+  background: #1D4ED8;
+  border-color: #FFFFFF;
+  color: #FFFFFF;
+}
+
+.color-preset-delete:focus-visible {
+  background: #1D4ED8;
+  outline: 2px solid #0F172A;
+  outline-offset: 2px;
 }
 
 .icon-button {

@@ -49,9 +49,26 @@ test("options rail wraps controls and long completed-file status text", () => {
 test("options buttons retain an explicit keyboard focus indicator", () => {
   const css = readFileSync("src/options/options.css", "utf8");
 
-  assert.match(css, /#createCompletedFile:focus-visible,[\s\S]*outline:\s*3px solid #0f172a/i);
+  assert.match(css, /#addColorPreset:focus-visible[\s\S]*outline:\s*3px solid #0f172a/i);
   assert.match(css, /button:focus-visible\s*\{[\s\S]*outline:\s*3px solid #0f172a/i);
   assert.doesNotMatch(css, /button:hover,\s*button:focus-visible\s*\{[\s\S]*outline:\s*none/);
+});
+
+test("new completed-file button uses the neutral button style", () => {
+  const css = readFileSync("src/options/options.css", "utf8");
+
+  assert.doesNotMatch(css, /#createCompletedFile\s*,\s*#addColorPreset/i);
+  assert.doesNotMatch(css, /#createCompletedFile\s*\{[\s\S]*background:\s*#2563EB/i);
+  assert.match(css, /#addColorPreset\s*\{[\s\S]*background:\s*#2563EB/i);
+});
+
+test("color preset controls are compact swatches with a corner delete affordance", () => {
+  const css = readFileSync("src/options/options.css", "utf8");
+
+  assert.match(css, /\.color-preset-item\s*\{[\s\S]*width:\s*28px[\s\S]*height:\s*28px/);
+  assert.match(css, /\.color-preset-delete\s*\{[\s\S]*position:\s*absolute[\s\S]*right:\s*-5px[\s\S]*top:\s*-5px/);
+  assert.doesNotMatch(css, /\.color-picker-menu/);
+  assert.doesNotMatch(css, /\.color-picker-choices/);
 });
 
 test("options page invokes completed-file picker APIs directly from click handlers", () => {
@@ -88,20 +105,38 @@ test("options page sends color preset changes as a narrow settings patch", () =>
   assert.doesNotMatch(source, /sendMessage\(MESSAGE_TYPES\.UPDATE_SETTINGS,\s*\{\s*\.\.\.settings,\s*colorPresets\s*\}\)/);
 });
 
-test("options color presets open an inline color picker for edits", async (t) => {
+test("options color presets use native color inputs and inline x delete", async (t) => {
   const page = await loadOptionsPage(t);
   const swatch = page.findByClass("color-swatch", page.elements.colorPresetList);
 
-  await swatch.dispatch("click");
-  const menu = page.findByClass("color-picker-menu", page.elements.colorPresetList);
-  const picker = page.findByClass("color-picker-input", page.elements.colorPresetList);
-  picker.value = "#22c55e";
-  await picker.dispatch("change");
+  swatch.value = "#22c55e";
+  await swatch.dispatch("change");
   await flush();
 
-  assert.equal(menu.attributes.role, "menu");
-  assert.equal(picker.type, "color");
+  assert.equal(swatch.tagName, "input");
+  assert.equal(swatch.type, "color");
+  assert.equal(page.findByText("删除", page.elements.colorPresetList), null);
   assert.deepEqual(page.messages.find((message) => message.type === MESSAGE_TYPES.UPDATE_SETTINGS)?.payload.colorPresets, ["#22c55e"]);
+
+  const deleteButton = page.findByClass("color-preset-delete", page.elements.colorPresetList);
+  assert.equal(deleteButton.textContent, "x");
+  await deleteButton.dispatch("click");
+  await flush();
+
+  assert.deepEqual(page.messages.filter((message) => message.type === MESSAGE_TYPES.UPDATE_SETTINGS).at(-1)?.payload.colorPresets, []);
+});
+
+test("add color preset appends a random color without prompting", async (t) => {
+  const page = await loadOptionsPage(t);
+
+  await page.elements.addColorPreset.dispatch("click");
+  await flush();
+
+  const updateMessage = page.messages.find((message) => message.type === MESSAGE_TYPES.UPDATE_SETTINGS);
+  assert.equal(page.promptCalls.length, 0);
+  assert.equal(updateMessage?.payload.colorPresets.length, 2);
+  assert.equal(updateMessage?.payload.colorPresets[0], "#ffffff");
+  assert.match(updateMessage?.payload.colorPresets[1], /^#[0-9a-f]{6}$/);
 });
 
 test("completed record edit failures show an error and restore the list", async (t) => {
@@ -222,6 +257,7 @@ async function loadOptionsPage(t, overrides = {}) {
   const previousAddEventListener = globalThis.addEventListener;
   const previousShowOpenFilePicker = globalThis.showOpenFilePicker;
   const previousShowSaveFilePicker = globalThis.showSaveFilePicker;
+  const previousPrompt = globalThis.prompt;
   const elements = Object.fromEntries([
     "addColorPreset",
     "colorPresetList",
@@ -234,6 +270,7 @@ async function loadOptionsPage(t, overrides = {}) {
     "weeklyChart"
   ].map((id) => [id, new TestElement("div", id)]));
   const messages = [];
+  const promptCalls = [];
   elements.completedSearch.value = "";
   globalThis.document = {
     getElementById(id) {
@@ -267,6 +304,10 @@ async function loadOptionsPage(t, overrides = {}) {
   };
   globalThis.echarts = null;
   globalThis.addEventListener = () => {};
+  globalThis.prompt = (...args) => {
+    promptCalls.push(args);
+    return "#abcdef";
+  };
   globalThis.showOpenFilePicker = undefined;
   globalThis.showSaveFilePicker = undefined;
   t.after(() => {
@@ -274,6 +315,7 @@ async function loadOptionsPage(t, overrides = {}) {
     globalThis.chrome = previousChrome;
     globalThis.echarts = previousEcharts;
     globalThis.addEventListener = previousAddEventListener;
+    globalThis.prompt = previousPrompt;
     globalThis.showOpenFilePicker = previousShowOpenFilePicker;
     globalThis.showSaveFilePicker = previousShowSaveFilePicker;
   });
@@ -284,6 +326,7 @@ async function loadOptionsPage(t, overrides = {}) {
   return {
     elements,
     messages,
+    promptCalls,
     findByTag(tagName, root) {
       return findElement(root, (element) => element.tagName === tagName);
     },

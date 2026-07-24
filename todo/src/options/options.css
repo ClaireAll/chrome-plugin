@@ -82,6 +82,10 @@ body {
   gap: 16px;
 }
 
+.todo-options-rail .control-row {
+  flex-wrap: wrap;
+}
+
 .options-section {
   padding: 16px;
 }
@@ -158,6 +162,12 @@ input:focus-visible {
 .empty-state {
   color: #64748B;
   font-size: 13px;
+}
+
+.status-text {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .completed-list {

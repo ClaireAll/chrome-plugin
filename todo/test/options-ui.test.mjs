@@ -39,6 +39,13 @@ test("options page exposes the calm workspace layout hooks", () => {
   assert.match(css, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(260px,\s*320px\)/);
 });
 
+test("options rail wraps controls and long completed-file status text", () => {
+  const css = readFileSync("src/options/options.css", "utf8");
+
+  assert.match(css, /\.todo-options-rail\s+\.control-row\s*\{[\s\S]*flex-wrap:\s*wrap/);
+  assert.match(css, /\.status-text\s*\{[\s\S]*min-width:\s*0[\s\S]*overflow-wrap:\s*anywhere/);
+});
+
 test("options page invokes completed-file picker APIs directly from click handlers", () => {
   const source = readFileSync("src/options/options.js", "utf8");
   const workerSource = readFileSync("src/background/service-worker.js", "utf8");

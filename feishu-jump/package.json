@@ -4,7 +4,7 @@
   "private": true,
   "description": "A browser extension that opens Feishu Project task detail pages by key.",
   "scripts": {
-    "check": "node --check popup.js && node --check src/urlBuilder.js"
+    "check": "node --check popup.js && node --check src/urlBuilder.js && node --check src/service-worker.js"
   },
   "devDependencies": {}
 }

@@ -19,5 +19,11 @@
     "default_popup": "popup.html",
     "default_title": "Feishu Task Jumper"
   },
+  "background": {
+    "service_worker": "src/service-worker.js"
+  },
+  "omnibox": {
+    "keyword": "fs"
+  },
   "permissions": ["tabs"]
 }

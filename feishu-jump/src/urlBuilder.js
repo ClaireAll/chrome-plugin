@@ -41,3 +41,12 @@ if (typeof window !== 'undefined') {
     validateKey,
   };
 }
+
+if (typeof self !== 'undefined') {
+  self.FeishuTaskUrlBuilder = {
+    TASK_DETAIL_URL_TEMPLATE,
+    buildTaskUrl,
+    normalizeTaskKey,
+    validateKey,
+  };
+}

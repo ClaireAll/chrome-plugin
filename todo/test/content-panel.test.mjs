@@ -7,8 +7,7 @@ test("content source exposes the instrument launcher and panel summary", () => {
   const source = readFileSync("src/content/content.js", "utf8");
 
   assert.match(source, /class="todo-ball-count"/);
-  assert.match(source, /class="todo-ball-tick todo-ball-tick--teal"/);
-  assert.match(source, /class="todo-ball-tick todo-ball-tick--coral"/);
+  assert.doesNotMatch(source, /todo-ball-tick/);
   assert.match(source, /class="todo-panel-header"/);
   assert.match(source, /ball\.setAttribute\("aria-label", `未完成待办 \$\{unfinishedCount\} 项`\)/);
 });
@@ -79,19 +78,28 @@ test("todo rows show a visible reminder action and reminder time", async () => {
   assert.match(html, /提醒\s+\d{2}\/\d{2}\s+\d{2}:\d{2}/);
 });
 
-test("runtime reminder messages show an in-page toast", async () => {
-  const { context, document, dispatchRuntimeMessage } = createContentContext();
+test("runtime reminder messages stay visible until acknowledged", async () => {
+  const { context, document, dispatchRuntimeMessage, timeoutCalls } = createContentContext({ captureTimeouts: true });
 
   vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
     filename: "src/content/content.js"
   });
   await delay(0);
 
+  const timeoutCountBeforeReminder = timeoutCalls.length;
   dispatchRuntimeMessage({ type: "TODO_REMINDER_DUE", payload: { text: "Task A" } });
   await delay(0);
 
-  assert.equal(document.elements[".todo-toast"].hidden, false);
-  assert.equal(document.elements[".todo-toast"].textContent, "提醒：Task A");
+  const toast = document.elements[".todo-toast"];
+  assert.equal(toast.hidden, false);
+  assert.equal(timeoutCalls.length, timeoutCountBeforeReminder);
+  assert.match(toast.innerHTML, /提醒：Task A/);
+  assert.match(toast.innerHTML, /class="todo-toast-ack" type="button">我知道了<\/button>/);
+
+  const ackButton = createActionTarget("todo-toast-ack", {}, toast);
+  toast.dispatch("click", { target: ackButton });
+
+  assert.equal(toast.hidden, true);
 });
 
 test("clicking outside the panel closes the open panel", async () => {
@@ -384,8 +392,17 @@ function createContentContext(options = {}) {
   const document = createDocumentStub(options);
   let backgroundItems = options.items || [];
   const messages = [];
+  const timeoutCalls = [];
   let storageChangeListener;
   let runtimeMessageListener;
+  const scheduleTimeout = (callback, delayMs) => {
+    if (!options.captureTimeouts) return setTimeout(callback, delayMs);
+    timeoutCalls.push({ callback, delayMs });
+    return timeoutCalls.length;
+  };
+  const cancelTimeout = (timer) => {
+    if (!options.captureTimeouts) clearTimeout(timer);
+  };
   const context = {
     chrome: {
       runtime: {
@@ -433,11 +450,11 @@ function createContentContext(options = {}) {
       listeners: {},
       addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); },
       dispatch(type, event = {}) { for (const listener of this.listeners[type] || []) listener(event); },
-      setTimeout,
-      clearTimeout
+      setTimeout: scheduleTimeout,
+      clearTimeout: cancelTimeout
     },
-    setTimeout,
-    clearTimeout,
+    setTimeout: scheduleTimeout,
+    clearTimeout: cancelTimeout,
     console,
     Promise,
     String,
@@ -454,6 +471,7 @@ function createContentContext(options = {}) {
     context,
     document,
     messages,
+    timeoutCalls,
     setBackgroundItems(items) { backgroundItems = items; },
     dispatchRuntimeMessage(message) { runtimeMessageListener?.(message, {}, () => {}); },
     dispatchStorageChange(changes) { storageChangeListener?.(changes, "local"); }

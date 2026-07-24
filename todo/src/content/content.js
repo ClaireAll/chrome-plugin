@@ -69,8 +69,6 @@
   root.innerHTML = `
     <div class="todo-shell">
       <button class="todo-ball" type="button" title="待办" aria-label="未完成待办 0 项">
-        <span class="todo-ball-tick todo-ball-tick--teal" aria-hidden="true"></span>
-        <span class="todo-ball-tick todo-ball-tick--coral" aria-hidden="true"></span>
         <span class="todo-ball-count" aria-hidden="true"></span>
       </button>
       <section class="todo-panel" hidden>
@@ -126,6 +124,7 @@
   list.addEventListener("dragover", handleTodoDragOver);
   list.addEventListener("drop", handleTodoDrop);
   list.addEventListener("dragend", clearTodoDrag);
+  toast.addEventListener("click", handleToastClick);
   window.addEventListener("resize", () => {
     persistClampedBallPosition();
     if (state.isOpen) positionPanel();
@@ -569,6 +568,7 @@
   }
 
   function showToast(message) {
+    toast.innerHTML = "";
     toast.textContent = String(message || "Operation failed");
     toast.classList.toggle("todo-toast--reminder", false);
     toast.hidden = false;
@@ -579,12 +579,25 @@
 
   function showReminderToast(payload) {
     const text = String(payload?.text || "待办事项").trim() || "待办事项";
-    toast.textContent = `提醒：${text}`;
+    toast.textContent = "";
+    toast.innerHTML = `
+      <span class="todo-toast-message">${escapeHtml(`提醒：${text}`)}</span>
+      <button class="todo-toast-ack" type="button">我知道了</button>
+    `;
     toast.classList.toggle("todo-toast--reminder", true);
     toast.hidden = false;
     positionToast();
     window.clearTimeout?.(showToast.timer);
-    showToast.timer = window.setTimeout?.(() => { toast.hidden = true; }, 8000);
+    showToast.timer = null;
+  }
+
+  function handleToastClick(event) {
+    const ackButton = event.target?.closest?.(".todo-toast-ack");
+    if (!ackButton || !toast.contains(ackButton)) return;
+    toast.hidden = true;
+    toast.innerHTML = "";
+    toast.textContent = "";
+    toast.classList.toggle("todo-toast--reminder", false);
   }
 
   function positionToast() {

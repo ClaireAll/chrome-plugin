@@ -16,6 +16,8 @@
 }
 
 #todo-extension-root .todo-shell {
+  --todo-ball-size: 44px;
+  --todo-ball-opacity: 0.86;
   position: fixed;
   right: 0;
   top: 50%;
@@ -26,43 +28,59 @@
   box-sizing: border-box;
   position: relative;
   display: grid;
-  width: 48px;
-  height: 48px;
+  width: var(--todo-ball-size);
+  height: var(--todo-ball-size);
   place-items: center;
-  border: 3px solid #2563eb;
-  border-radius: 50%;
-  background: var(--todo-surface);
-  color: var(--todo-ink);
-  cursor: pointer;
-  font: 700 16px/1 Arial, sans-serif;
-  box-shadow: 0 5px 14px rgb(24 33 47 / 18%);
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.16) 30%, transparent 31%),
+    linear-gradient(145deg, color-mix(in srgb, var(--todo-cobalt) 68%, #ffffff 16%), #8b5cf6);
+  color: #fff;
+  cursor: grab;
+  opacity: var(--todo-ball-opacity);
+  box-shadow:
+    0 14px 34px rgba(3, 7, 18, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(12px);
+  transition: box-shadow 180ms ease, opacity 180ms ease, transform 180ms ease;
 }
 
-#todo-extension-root .todo-ball-tick {
+#todo-extension-root .todo-ball::after {
   position: absolute;
-  width: 3px;
-  height: 10px;
-  border-radius: 2px;
-  pointer-events: none;
+  right: 7px;
+  bottom: 7px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 50%;
+  background: #22c55e;
+  content: "";
 }
 
-#todo-extension-root .todo-ball-tick--teal {
-  top: 3px;
-  right: 10px;
-  background: var(--todo-teal);
-  transform: rotate(34deg);
-}
-
-#todo-extension-root .todo-ball-tick--coral {
-  bottom: 3px;
-  left: 10px;
-  background: var(--todo-coral);
-  transform: rotate(34deg);
+#todo-extension-root .todo-ball-count {
+  display: grid;
+  width: calc(var(--todo-ball-size) - 16px);
+  height: calc(var(--todo-ball-size) - 16px);
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.96);
+  font: 780 calc(var(--todo-ball-size) * 0.4)/1 Arial, sans-serif;
+  letter-spacing: 0;
 }
 
 #todo-extension-root .todo-ball:hover {
-  border-color: #1d4ed8;
-  box-shadow: 0 7px 16px rgb(37 99 235 / 24%);
+  opacity: 1;
+  transform: translateY(-1px);
+  box-shadow:
+    0 18px 40px rgba(3, 7, 18, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+#todo-extension-root .todo-ball:active {
+  cursor: grabbing;
 }
 
 #todo-extension-root .todo-ball:focus-visible {
@@ -368,8 +386,42 @@
   box-shadow: 0 6px 16px rgb(24 33 47 / 16%);
 }
 
+#todo-extension-root .todo-toast[hidden] {
+  display: none;
+}
+
 #todo-extension-root .todo-toast--reminder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   border-color: #93c5fd;
   background: #eff6ff;
   color: #1e3a8a;
+}
+
+#todo-extension-root .todo-toast-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#todo-extension-root .todo-toast-ack {
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--todo-cobalt);
+  color: #fff;
+  cursor: pointer;
+  font: 700 13px/1 Arial, sans-serif;
+}
+
+#todo-extension-root .todo-toast-ack:hover {
+  background: #1d4ed8;
+}
+
+#todo-extension-root .todo-toast-ack:focus-visible {
+  outline: 3px solid #0f172a;
+  outline-offset: 2px;
 }

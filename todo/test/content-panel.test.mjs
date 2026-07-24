@@ -30,9 +30,9 @@ test("content panel exposes local outline icons and options entries", async () =
   const source = readFileSync("src/content/content.js", "utf8");
 
   assert.match(source, /class="todo-header-settings" type="button" aria-label="打开设置"/);
-  assert.match(source, /class="todo-header-manage" type="button" aria-label="打开管理页"/);
+  assert.doesNotMatch(source, /todo-header-manage/);
   assert.match(source, /const TODO_ICONS = Object\.freeze/);
-  assert.match(source, /class="todo-task-check"/);
+  assert.doesNotMatch(source, /class="todo-task-check"/);
   assert.doesNotMatch(source, /todo-action-(?:color|reminder|complete|delete)[^>]*>[●◷✔️❌]/);
 
   const { context, document, messages } = createContentContext();
@@ -42,9 +42,8 @@ test("content panel exposes local outline icons and options entries", async () =
   await delay(0);
 
   document.elements[".todo-header-settings"].dispatch("click", {});
-  document.elements[".todo-header-manage"].dispatch("click", {});
 
-  assert.equal(messages.filter((message) => message.type === "TODO_OPEN_OPTIONS").length, 2);
+  assert.equal(messages.filter((message) => message.type === "TODO_OPEN_OPTIONS").length, 1);
 });
 
 test("content ball displays unfinished count and toggles the panel", async () => {
@@ -351,7 +350,7 @@ function createContentContext(options = {}) {
 
 function createDocumentStub(options = {}) {
   const elements = Object.fromEntries([
-    ".todo-shell", ".todo-ball", ".todo-ball-count", ".todo-panel", ".todo-header-settings", ".todo-header-manage", ".todo-create-form", ".todo-create-input", ".todo-list", ".todo-toast"
+    ".todo-shell", ".todo-ball", ".todo-ball-count", ".todo-panel", ".todo-header-settings", ".todo-create-form", ".todo-create-input", ".todo-list", ".todo-toast"
   ].map((selector) => [selector, new ElementStub("div", null, selector, options.rects || {})]));
   for (const element of Object.values(elements)) element.elements = elements;
   elements[".todo-panel"].hidden = true;

@@ -29,18 +29,6 @@
         <circle cx="12" cy="12" r="3"></circle>
       </svg>
     `,
-    "external-link": `
-      <svg class="todo-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M15 3h6v6"></path>
-        <path d="M10 14 21 3"></path>
-        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-      </svg>
-    `,
-    square: `
-      <svg class="todo-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <rect width="18" height="18" x="3" y="3" rx="2"></rect>
-      </svg>
-    `,
     bell: `
       <svg class="todo-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M10.268 21a2 2 0 0 0 3.464 0"></path>
@@ -90,7 +78,6 @@
           <h2>我的待办</h2>
           <div class="todo-panel-header-actions">
             <button class="todo-header-settings" type="button" aria-label="打开设置" title="打开设置">${iconMarkup("settings")}</button>
-            <button class="todo-header-manage" type="button" aria-label="打开管理页" title="打开管理页">${iconMarkup("external-link")}</button>
           </div>
         </header>
         <form class="todo-create-form">
@@ -109,7 +96,6 @@
   const ballCount = root.querySelector(".todo-ball-count");
   const panel = root.querySelector(".todo-panel");
   const headerSettings = root.querySelector(".todo-header-settings");
-  const headerManage = root.querySelector(".todo-header-manage");
   const createForm = root.querySelector(".todo-create-form");
   const createInput = root.querySelector(".todo-create-input");
   const list = root.querySelector(".todo-list");
@@ -127,7 +113,6 @@
   ball.addEventListener("pointerup", finishBallDrag);
   ball.addEventListener("pointercancel", cancelBallDrag);
   headerSettings.addEventListener("click", openOptionsPage);
-  headerManage.addEventListener("click", openOptionsPage);
   createForm.addEventListener("submit", (event) => {
     event.preventDefault();
     runSafely(addTodo());
@@ -194,7 +179,6 @@
       return `
         <article class="todo-item" draggable="true" data-todo-id="${escapeAttribute(item.id)}" style="--todo-color:${escapeAttribute(item.color || "#ffffff")}">
           <div class="todo-item-main">
-            <span class="todo-task-check">${iconMarkup("square")}</span>
             <div class="todo-text" contenteditable="true" data-todo-id="${escapeAttribute(item.id)}">${escapeHtml(item.text)}</div>
             <div class="todo-item-actions">
               <button class="todo-action-color" type="button" data-todo-id="${escapeAttribute(item.id)}" title="选择颜色" aria-label="选择颜色"><span class="todo-color-dot" aria-hidden="true"></span></button>

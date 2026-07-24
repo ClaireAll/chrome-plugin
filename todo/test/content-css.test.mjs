@@ -18,10 +18,13 @@ test("content CSS scopes styles and fixes panel dimensions", () => {
   assert.match(css, /\.todo-ball-tick--coral/);
   assert.match(css, /\.todo-panel-header[\s\S]*height:\s*52px/);
   assert.match(css, /\.todo-create-form[\s\S]*height:\s*52px/);
-  assert.match(css, /\.todo-item[\s\S]*border-left:\s*3px solid/);
+  assert.match(css, /\.todo-item::before[\s\S]*left:\s*8px[\s\S]*width:\s*3px/);
   assert.match(css, /\.todo-item-actions button[\s\S]*border:\s*0/);
   assert.match(css, /\.todo-header-settings:focus-visible[\s\S]*outline:\s*3px solid #0f172a/i);
   assert.match(css, /\.todo-icon[\s\S]*width:\s*16px/);
+  assert.match(css, /\.todo-item-main[\s\S]*align-items:\s*center/);
+  assert.match(css, /\.todo-text[\s\S]*font:\s*13px\/1\.6 Arial,\s*sans-serif/);
+  assert.doesNotMatch(css, /todo-task-check/);
   assert.match(css, /\.todo-create-input:focus/);
   assert.match(css, /\.todo-ball:focus-visible\s*\{[\s\S]*outline:\s*3px solid #0f172a[\s\S]*outline-offset:\s*4px/i);
   assert.match(css, /\.todo-ball:focus-visible\s*\{[\s\S]*box-shadow:\s*0 0 0 2px #fff,\s*0 0 0 5px #0f172a/i);

@@ -88,6 +88,22 @@ test("options page sends color preset changes as a narrow settings patch", () =>
   assert.doesNotMatch(source, /sendMessage\(MESSAGE_TYPES\.UPDATE_SETTINGS,\s*\{\s*\.\.\.settings,\s*colorPresets\s*\}\)/);
 });
 
+test("options color presets open an inline color picker for edits", async (t) => {
+  const page = await loadOptionsPage(t);
+  const swatch = page.findByClass("color-swatch", page.elements.colorPresetList);
+
+  await swatch.dispatch("click");
+  const menu = page.findByClass("color-picker-menu", page.elements.colorPresetList);
+  const picker = page.findByClass("color-picker-input", page.elements.colorPresetList);
+  picker.value = "#22c55e";
+  await picker.dispatch("change");
+  await flush();
+
+  assert.equal(menu.attributes.role, "menu");
+  assert.equal(picker.type, "color");
+  assert.deepEqual(page.messages.find((message) => message.type === MESSAGE_TYPES.UPDATE_SETTINGS)?.payload.colorPresets, ["#22c55e"]);
+});
+
 test("completed record edit failures show an error and restore the list", async (t) => {
   const page = await loadOptionsPage(t, {
     [MESSAGE_TYPES.UPDATE_COMPLETED_RECORD]: { ok: false, message: "Edit failed" }
@@ -217,6 +233,7 @@ async function loadOptionsPage(t, overrides = {}) {
     "requestCompletedPermission",
     "weeklyChart"
   ].map((id) => [id, new TestElement("div", id)]));
+  const messages = [];
   elements.completedSearch.value = "";
   globalThis.document = {
     getElementById(id) {
@@ -229,6 +246,7 @@ async function loadOptionsPage(t, overrides = {}) {
   globalThis.chrome = {
     runtime: {
       sendMessage(message) {
+        messages.push(message);
         if (overrides[message.type]) {
           const override = overrides[message.type];
           return Promise.resolve(typeof override === "function" ? override(message) : override);
@@ -265,8 +283,12 @@ async function loadOptionsPage(t, overrides = {}) {
 
   return {
     elements,
+    messages,
     findByTag(tagName, root) {
       return findElement(root, (element) => element.tagName === tagName);
+    },
+    findByClass(className, root) {
+      return findElement(root, (element) => element.className.split(" ").includes(className));
     },
     findByText(text, root) {
       return findElement(root, (element) => element.textContent === text);

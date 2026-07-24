@@ -218,6 +218,7 @@ input:focus-visible {
   display: flex;
   align-items: center;
   gap: 4px;
+  position: relative;
 }
 
 .color-swatch {
@@ -232,6 +233,42 @@ input:focus-visible {
 .color-swatch:focus-visible {
   outline: 2px solid #2563EB;
   outline-offset: 2px;
+}
+
+.color-picker-menu {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  z-index: 2;
+  display: grid;
+  gap: 8px;
+  width: 168px;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid #DDE3EC;
+  border-radius: 8px;
+  background: #FFFFFF;
+  box-shadow: 0 12px 28px rgb(24 33 47 / 16%);
+}
+
+.color-picker-input {
+  width: 100%;
+  height: 34px;
+  padding: 2px;
+}
+
+.color-picker-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.color-picker-choice {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
+  border-color: #CBD5E1;
 }
 
 .icon-button {

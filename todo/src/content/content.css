@@ -111,8 +111,7 @@
   gap: 6px;
 }
 
-#todo-extension-root .todo-header-settings,
-#todo-extension-root .todo-header-manage {
+#todo-extension-root .todo-header-settings {
   box-sizing: border-box;
   display: grid;
   width: 28px;
@@ -127,7 +126,6 @@
 }
 
 #todo-extension-root .todo-header-settings:hover,
-#todo-extension-root .todo-header-manage:hover,
 #todo-extension-root .todo-item-actions button:hover {
   background: #f3f6fb;
   color: #1f2937;
@@ -152,7 +150,7 @@
   border-radius: 5px;
   background: var(--todo-surface);
   color: var(--todo-ink);
-  font: 13px/1.35 Arial, sans-serif;
+  font: 14px/1.35 Arial, sans-serif;
 }
 
 #todo-extension-root .todo-create-input:focus {
@@ -170,7 +168,7 @@
   background: var(--todo-cobalt);
   color: #fff;
   cursor: pointer;
-  font: 700 13px/1 Arial, sans-serif;
+  font: 700 14px/1 Arial, sans-serif;
 }
 
 #todo-extension-root .todo-create-submit:hover {
@@ -192,27 +190,28 @@
 
 #todo-extension-root .todo-item {
   box-sizing: border-box;
+  position: relative;
   border: 0;
   border-bottom: 1px solid var(--todo-divider);
-  border-left: 3px solid var(--todo-color, #2563eb);
   background: var(--todo-surface);
+}
+
+#todo-extension-root .todo-item::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--todo-color, #2563eb);
 }
 
 #todo-extension-root .todo-item-main {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 14px 10px;
-}
-
-#todo-extension-root .todo-task-check {
-  display: grid;
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  place-items: center;
-  color: #cbd5e1;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 10px 14px 20px;
 }
 
 #todo-extension-root .todo-text {
@@ -221,7 +220,7 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   color: var(--todo-ink);
-  font: 12px/1.65 Arial, sans-serif;
+  font: 13px/1.6 Arial, sans-serif;
   outline: none;
 }
 
@@ -229,7 +228,6 @@
   display: flex;
   flex: 0 0 auto;
   gap: 8px;
-  padding-top: 1px;
 }
 
 #todo-extension-root .todo-color-choice,
@@ -277,7 +275,6 @@
 #todo-extension-root .todo-action-delete { color: #64748b; }
 
 #todo-extension-root .todo-header-settings:focus-visible,
-#todo-extension-root .todo-header-manage:focus-visible,
 #todo-extension-root .todo-item-actions button:focus-visible {
   outline: 3px solid #0f172a;
   outline-offset: 2px;

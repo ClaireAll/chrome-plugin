@@ -18,10 +18,12 @@ const elements = {
   weeklyChart: document.getElementById("weeklyChart")
 };
 
+const COLOR_PICKER_OPTIONS = ["#2563eb", "#14b8a6", "#f97316", "#8b5cf6", "#ef4444", "#facc15", "#ffffff"];
 let completedData = { completed: [] };
 let completedStatus = null;
 let completedMutationBusy = false;
 let settings = { colorPresets: [] };
+let activeColorPreset = "";
 let chart = null;
 
 function sendMessage(type, payload = {}) {
@@ -87,10 +89,13 @@ function renderColorPresets() {
   for (const color of settings.colorPresets || []) {
     const item = document.createElement("div");
     item.className = "color-preset-item";
-    const swatch = createButton("", "color-swatch", () => editColorPreset(color));
+    const swatch = createButton("", "color-swatch", () => toggleColorPicker(color));
     swatch.style.backgroundColor = color;
     swatch.title = `编辑 ${color}`;
+    swatch.setAttribute("aria-label", `编辑颜色 ${color}`);
+    swatch.setAttribute("aria-expanded", activeColorPreset === color ? "true" : "false");
     item.append(swatch, createButton("删除", "icon-button", () => deleteColorPreset(color)));
+    if (activeColorPreset === color) item.append(renderColorPickerMenu(color));
     elements.colorPresetList.append(item);
   }
 }
@@ -98,18 +103,52 @@ function renderColorPresets() {
 async function updateColorPresets(colorPresets) {
   const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { colorPresets });
   if (!result.ok) return;
-  settings = result.settings;
+  settings = result.settings || { ...settings, colorPresets };
   renderColorPresets();
 }
 
-function editColorPreset(color) {
-  const nextColor = globalThis.prompt("颜色值", color);
-  if (!nextColor || nextColor === color) return;
-  updateColorPresets(settings.colorPresets.map((item) => item === color ? nextColor : item));
+function toggleColorPicker(color) {
+  activeColorPreset = activeColorPreset === color ? "" : color;
+  renderColorPresets();
+}
+
+function renderColorPickerMenu(color) {
+  const menu = document.createElement("div");
+  menu.className = "color-picker-menu";
+  menu.setAttribute("role", "menu");
+  const picker = document.createElement("input");
+  picker.type = "color";
+  picker.className = "color-picker-input";
+  picker.value = normalizePickerColor(color);
+  picker.setAttribute("aria-label", "选择颜色");
+  picker.addEventListener("change", () => applyColorPreset(color, picker.value));
+  const choices = document.createElement("div");
+  choices.className = "color-picker-choices";
+  for (const choice of COLOR_PICKER_OPTIONS) {
+    const button = createButton("", "color-picker-choice", () => applyColorPreset(color, choice));
+    button.style.backgroundColor = choice;
+    button.title = choice;
+    button.setAttribute("aria-label", `选择 ${choice}`);
+    choices.append(button);
+  }
+  menu.append(picker, choices);
+  return menu;
+}
+
+function applyColorPreset(color, nextColor) {
+  const normalizedColor = normalizePickerColor(nextColor);
+  if (normalizedColor === color) return;
+  activeColorPreset = "";
+  updateColorPresets(settings.colorPresets.map((item) => item === color ? normalizedColor : item));
 }
 
 function deleteColorPreset(color) {
+  if (activeColorPreset === color) activeColorPreset = "";
   updateColorPresets(settings.colorPresets.filter((item) => item !== color));
+}
+
+function normalizePickerColor(color) {
+  return /^#[0-9a-f]{6}$/i.test(color || "") ? color.toLowerCase() : "#ffffff";
 }
 
 function renderWeeklySummary() {

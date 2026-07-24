@@ -22,6 +22,23 @@ test("options page exposes completed records, storage, color, and weekly control
   assert.equal(html.includes("vendor/echarts.min.js"), true);
 });
 
+test("options page exposes the calm workspace layout hooks", () => {
+  const html = readFileSync("src/options/options.html", "utf8");
+  const css = readFileSync("src/options/options.css", "utf8");
+
+  for (const className of [
+    "todo-options-header",
+    "todo-options-workspace",
+    "todo-options-primary",
+    "todo-options-rail",
+    "todo-options-summary"
+  ]) {
+    assert.equal(html.includes(`class="${className}"`), true);
+    assert.match(css, new RegExp(`\\.${className}`));
+  }
+  assert.match(css, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(260px,\s*320px\)/);
+});
+
 test("options page invokes completed-file picker APIs directly from click handlers", () => {
   const source = readFileSync("src/options/options.js", "utf8");
   const workerSource = readFileSync("src/background/service-worker.js", "utf8");

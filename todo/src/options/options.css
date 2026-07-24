@@ -1,14 +1,14 @@
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #f7f7f5;
-  color: #1f2933;
+  background: #F6F8FB;
+  color: #18212F;
 }
 
 .todo-options-shell {
   width: min(1180px, calc(100vw - 48px));
   margin: 0 auto;
-  padding: 32px 0;
+  padding: 40px 0 48px;
 }
 
 .todo-options-shell h1,
@@ -17,18 +17,73 @@ body {
 }
 
 .todo-options-shell h1 {
-  font-size: 24px;
+  font-size: 28px;
+  line-height: 1.2;
 }
 
 .todo-options-shell h2 {
   font-size: 16px;
+  line-height: 1.4;
 }
 
+.todo-options-header {
+  margin-bottom: 28px;
+}
+
+.todo-options-kicker,
+.todo-options-subtitle {
+  margin: 0;
+}
+
+.todo-options-kicker {
+  color: #2563EB;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.todo-options-header h1 {
+  margin-top: 8px;
+}
+
+.todo-options-subtitle {
+  margin-top: 8px;
+  color: #64748B;
+  font-size: 14px;
+}
+
+.todo-options-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 24px;
+  align-items: start;
+}
+
+.todo-options-primary,
 .options-section,
-#weeklySummary {
-  border-top: 1px solid #d9ded9;
-  margin-top: 24px;
-  padding-top: 16px;
+.todo-options-summary {
+  background: #FFFFFF;
+  border: 1px solid #DDE3EC;
+  border-radius: 8px;
+}
+
+.todo-options-primary {
+  overflow: hidden;
+}
+
+.todo-options-primary > .section-heading {
+  padding: 18px 20px;
+  border-bottom: 1px solid #DDE3EC;
+}
+
+.todo-options-rail {
+  display: grid;
+  gap: 16px;
+}
+
+.options-section {
+  padding: 16px;
 }
 
 .section-heading,
@@ -46,25 +101,52 @@ body {
 
 button,
 input {
-  border: 1px solid #aeb8b1;
-  border-radius: 4px;
+  box-sizing: border-box;
+  border: 1px solid #DDE3EC;
+  border-radius: 6px;
   font: inherit;
 }
 
 button {
-  background: #ffffff;
-  color: #1f2933;
+  background: #FFFFFF;
+  color: #18212F;
   cursor: pointer;
   padding: 6px 10px;
 }
 
-button:hover {
-  background: #edf3ee;
+#createCompletedFile,
+#addColorPreset {
+  background: #2563EB;
+  border-color: #2563EB;
+  color: #FFFFFF;
+}
+
+#createCompletedFile:hover,
+#createCompletedFile:focus-visible,
+#addColorPreset:hover,
+#addColorPreset:focus-visible {
+  background: #1D4ED8;
+  border-color: #1D4ED8;
+  color: #FFFFFF;
+}
+
+button:hover,
+button:focus-visible {
+  background: #EFF6FF;
+  border-color: #2563EB;
+  color: #1D4ED8;
+  outline: none;
 }
 
 input {
-  background: #ffffff;
+  background: #FFFFFF;
   padding: 6px 8px;
+}
+
+input:focus-visible {
+  border-color: #2563EB;
+  outline: 2px solid #BFDBFE;
+  outline-offset: 1px;
 }
 
 #completedSearch {
@@ -74,17 +156,20 @@ input {
 .status-text,
 .completed-time,
 .empty-state {
-  color: #617066;
+  color: #64748B;
   font-size: 13px;
 }
 
 .completed-list {
-  margin-top: 12px;
+  min-height: 112px;
 }
 
 .completed-row {
-  border-bottom: 1px solid #e1e6e2;
-  padding: 8px 0;
+  padding: 12px 20px;
+}
+
+.completed-row + .completed-row {
+  border-top: 1px solid #DDE3EC;
 }
 
 .completed-row input {
@@ -94,6 +179,11 @@ input {
 
 .completed-time {
   min-width: 156px;
+}
+
+.empty-state {
+  margin: 0;
+  padding: 20px;
 }
 
 .color-preset-list {
@@ -110,9 +200,15 @@ input {
 .color-swatch {
   width: 28px;
   height: 28px;
-  border: 1px solid #7e8d82;
-  border-radius: 4px;
+  min-width: 28px;
+  border: 1px solid #94A3B8;
+  border-radius: 6px;
   padding: 0;
+}
+
+.color-swatch:focus-visible {
+  outline: 2px solid #2563EB;
+  outline-offset: 2px;
 }
 
 .icon-button {
@@ -120,15 +216,24 @@ input {
   padding: 4px 7px;
 }
 
+.todo-options-summary {
+  margin-top: 24px;
+  padding: 18px 20px 20px;
+}
+
 #weeklyChart {
   min-height: 180px;
   width: 100%;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .todo-options-shell {
     width: min(100% - 24px, 1180px);
     padding: 20px 0;
+  }
+
+  .todo-options-workspace {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .section-heading,
@@ -140,6 +245,10 @@ input {
 
   .completed-time {
     min-width: 0;
+    width: 100%;
+  }
+
+  #completedSearch {
     width: 100%;
   }
 }

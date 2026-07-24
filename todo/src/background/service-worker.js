@@ -106,6 +106,7 @@ async function handleAlarmNow(alarm, handledAt) {
   }
   if (!isReminderOnTime(item.reminderAt, handledAt)) return;
 
+  await notifyOpenPages(item);
   await chrome.notifications.create(alarm.name, {
     type: "basic",
     iconUrl: "icons/icon-128.png",
@@ -113,6 +114,22 @@ async function handleAlarmNow(alarm, handledAt) {
     message: item.text
   });
   await saveTodoItems(markTodoReminded(items, id, handledAt));
+}
+
+async function notifyOpenPages(item) {
+  if (!chrome.tabs?.query || !chrome.tabs?.sendMessage) return;
+  try {
+    const tabs = await chrome.tabs.query({});
+    const message = {
+      type: MESSAGE_TYPES.REMINDER_DUE,
+      payload: { id: item.id, text: item.text, reminderAt: item.reminderAt }
+    };
+    await Promise.allSettled((Array.isArray(tabs) ? tabs : [])
+      .filter((tab) => Number.isInteger(tab.id))
+      .map((tab) => chrome.tabs.sendMessage(tab.id, message)));
+  } catch {
+    // Page prompts are helpful, but the system notification remains the reliable fallback.
+  }
 }
 
 function completedStore() {

@@ -12,7 +12,8 @@
     REORDER_TODOS: "TODO_REORDER_TODOS",
     COMPLETE_TODO: "TODO_COMPLETE_TODO",
     UPDATE_SETTINGS: "TODO_UPDATE_SETTINGS",
-    OPEN_OPTIONS: "TODO_OPEN_OPTIONS"
+    OPEN_OPTIONS: "TODO_OPEN_OPTIONS",
+    REMINDER_DUE: "TODO_REMINDER_DUE"
   };
   const DEFAULT_COLORS = ["#ffffff", "#fef3c7", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe"];
   const PANEL_WIDTH = 320;
@@ -132,6 +133,9 @@
   });
   chrome.storage?.onChanged?.addListener((changes, areaName) => {
     if (areaName === "local" && (changes.todoUnfinishedItems || changes.todoSettings)) runSafely(refreshState());
+  });
+  chrome.runtime?.onMessage?.addListener((message) => {
+    if (message?.type === MESSAGE_TYPES.REMINDER_DUE) showReminderToast(message.payload);
   });
 
   runSafely(refreshState());
@@ -566,10 +570,21 @@
 
   function showToast(message) {
     toast.textContent = String(message || "Operation failed");
+    toast.classList.toggle("todo-toast--reminder", false);
     toast.hidden = false;
     positionToast();
     window.clearTimeout?.(showToast.timer);
     showToast.timer = window.setTimeout?.(() => { toast.hidden = true; }, 4000);
+  }
+
+  function showReminderToast(payload) {
+    const text = String(payload?.text || "待办事项").trim() || "待办事项";
+    toast.textContent = `提醒：${text}`;
+    toast.classList.toggle("todo-toast--reminder", true);
+    toast.hidden = false;
+    positionToast();
+    window.clearTimeout?.(showToast.timer);
+    showToast.timer = window.setTimeout?.(() => { toast.hidden = true; }, 8000);
   }
 
   function positionToast() {

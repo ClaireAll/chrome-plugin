@@ -367,3 +367,9 @@
   font: 13px/1.35 Arial, sans-serif;
   box-shadow: 0 6px 16px rgb(24 33 47 / 16%);
 }
+
+#todo-extension-root .todo-toast--reminder {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1e3a8a;
+}

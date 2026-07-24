@@ -356,6 +356,32 @@ test("on-time alarm creates a notification before marking the todo reminded", as
   assert.ok(chromeStub.events.indexOf("notification") < chromeStub.events.lastIndexOf("save"));
 });
 
+test("on-time alarm sends a page reminder message before marking the todo reminded", async (t) => {
+  const chromeStub = installChromeStub(t, { tabs: [{ id: 1 }, { id: 2 }, { id: null }] });
+  const worker = await importWorker("on-time-page-reminder");
+  chromeStub.values.todoUnfinishedItems = [reminderTodo()];
+
+  await worker.handleAlarm(matchingAlarm(), "2026-07-23T09:01:00.000Z");
+
+  assert.deepEqual(chromeStub.tabMessages, [
+    {
+      tabId: 1,
+      message: {
+        type: MESSAGE_TYPES.REMINDER_DUE,
+        payload: { id: "a", text: "Task A", reminderAt: "2026-07-23T09:00:00.000Z" }
+      }
+    },
+    {
+      tabId: 2,
+      message: {
+        type: MESSAGE_TYPES.REMINDER_DUE,
+        payload: { id: "a", text: "Task A", reminderAt: "2026-07-23T09:00:00.000Z" }
+      }
+    }
+  ]);
+  assert.ok(chromeStub.events.indexOf("tab-message") < chromeStub.events.lastIndexOf("save"));
+});
+
 test("alarm serialization preserves a todo added while its notification is pending", async (t) => {
   let releaseNotification;
   let notificationReleased = false;
@@ -453,7 +479,7 @@ function installChromeStub(t, options) {
 
 function createChromeStub(options = {}) {
   const values = {};
-  const stub = { values, events: [] };
+  const stub = { values, events: [], tabMessages: [] };
   let notificationClick;
   const runtime = {
     lastError: null,
@@ -476,6 +502,17 @@ function createChromeStub(options = {}) {
         return options.createNotification?.();
       },
       onClicked: { addListener(callback) { notificationClick = callback; } }
+    },
+    tabs: {
+      query() {
+        stub._tabsQueryCalls = (stub._tabsQueryCalls || 0) + 1;
+        return options.tabs || [];
+      },
+      sendMessage(tabId, message) {
+        stub.tabMessages.push({ tabId, message });
+        stub.events.push("tab-message");
+        return options.tabMessageError ? Promise.reject(options.tabMessageError) : Promise.resolve();
+      }
     },
     storage: {
       local: {
@@ -511,7 +548,8 @@ function createChromeStub(options = {}) {
     notificationPayload: { get: () => stub._notificationPayload },
     runtimeOpenOptionsCalls: { get: () => stub._runtimeOpenOptionsCalls || 0 },
     storageGetCalls: { get: () => stub._storageGetCalls || 0 },
-    storageSetCalls: { get: () => stub._storageSetCalls || 0 }
+    storageSetCalls: { get: () => stub._storageSetCalls || 0 },
+    tabsQueryCalls: { get: () => stub._tabsQueryCalls || 0 }
   });
   return stub;
 }

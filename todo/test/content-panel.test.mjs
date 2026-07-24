@@ -79,6 +79,21 @@ test("todo rows show a visible reminder action and reminder time", async () => {
   assert.match(html, /提醒\s+\d{2}\/\d{2}\s+\d{2}:\d{2}/);
 });
 
+test("runtime reminder messages show an in-page toast", async () => {
+  const { context, document, dispatchRuntimeMessage } = createContentContext();
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+
+  dispatchRuntimeMessage({ type: "TODO_REMINDER_DUE", payload: { text: "Task A" } });
+  await delay(0);
+
+  assert.equal(document.elements[".todo-toast"].hidden, false);
+  assert.equal(document.elements[".todo-toast"].textContent, "提醒：Task A");
+});
+
 test("clicking outside the panel closes the open panel", async () => {
   const { context, document } = createContentContext({
     items: [{ id: "a", text: "Task A" }]
@@ -370,10 +385,16 @@ function createContentContext(options = {}) {
   let backgroundItems = options.items || [];
   const messages = [];
   let storageChangeListener;
+  let runtimeMessageListener;
   const context = {
     chrome: {
       runtime: {
         lastError: null,
+        onMessage: {
+          addListener(listener) {
+            runtimeMessageListener = listener;
+          }
+        },
         sendMessage(message, callback) {
           messages.push(message);
           if (message.type === "TODO_GET_STATE") {
@@ -434,6 +455,7 @@ function createContentContext(options = {}) {
     document,
     messages,
     setBackgroundItems(items) { backgroundItems = items; },
+    dispatchRuntimeMessage(message) { runtimeMessageListener?.(message, {}, () => {}); },
     dispatchStorageChange(changes) { storageChangeListener?.(changes, "local"); }
   };
 }

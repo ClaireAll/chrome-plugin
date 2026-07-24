@@ -24,15 +24,30 @@ export function sanitizeColorPresets(value) {
 
 function sanitizeBallPosition(value) {
   if (!value || typeof value !== "object") return null;
+  const side = value.side === "left" || value.side === "right" ? value.side : null;
+  const leftRatio = Number(value.leftRatio);
+  const topRatio = Number(value.topRatio);
+  if (Number.isFinite(leftRatio) || Number.isFinite(topRatio)) {
+    return {
+      leftRatio: clampRatio(leftRatio),
+      topRatio: clampRatio(topRatio),
+      snapped: value.snapped === true,
+      side
+    };
+  }
   const left = Number(value.left);
   const top = Number(value.top);
-  const side = value.side === "left" || value.side === "right" ? value.side : null;
   return {
     left: Number.isFinite(left) ? Math.max(0, left) : 0,
     top: Number.isFinite(top) ? Math.max(0, top) : 0,
     snapped: value.snapped === true,
     side
   };
+}
+
+function clampRatio(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(value, 0), 1);
 }
 
 function isHexColor(value) {

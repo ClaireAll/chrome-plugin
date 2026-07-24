@@ -152,10 +152,36 @@ test("clicking the ball does not snap it but dragging does", async () => {
   ball.dispatch("pointermove", { clientX: 20, clientY: 10, pointerId: 2 });
   ball.dispatch("pointerup", { clientX: 20, clientY: 10, pointerId: 2 });
   await delay(0);
-  assert.equal(messages.filter((message) => message.type === "TODO_UPDATE_SETTINGS").length, 1);
+  const persisted = messages.find((message) => message.type === "TODO_UPDATE_SETTINGS")?.payload.ballPosition;
+  assert.equal(Number.isFinite(persisted?.leftRatio), true);
+  assert.equal(Number.isFinite(persisted?.topRatio), true);
+  assert.equal("left" in persisted, false);
+  assert.equal("top" in persisted, false);
 });
 
-test("restored ball positions are clamped and the correction is persisted", async () => {
+test("restored ratio ball positions are reapplied after the viewport changes", async () => {
+  const { context, document, messages } = createContentContext({
+    settings: { ballPosition: { leftRatio: 0.5, topRatio: 0.25, snapped: false, side: null } }
+  });
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+
+  assert.equal(document.elements[".todo-shell"].style.left, "576px");
+  assert.equal(document.elements[".todo-shell"].style.top, "188px");
+
+  context.window.innerWidth = 600;
+  context.window.innerHeight = 400;
+  context.window.dispatch("resize");
+
+  assert.equal(document.elements[".todo-shell"].style.left, "276px");
+  assert.equal(document.elements[".todo-shell"].style.top, "88px");
+  assert.equal(messages.filter((message) => message.type === "TODO_UPDATE_SETTINGS").length, 0);
+});
+
+test("legacy pixel ball positions are clamped and migrated to ratios", async () => {
   const { context, document, messages } = createContentContext({
     settings: { ballPosition: { left: 5000, top: 5000, snapped: false, side: null } }
   });
@@ -168,8 +194,10 @@ test("restored ball positions are clamped and the correction is persisted", asyn
   assert.equal(document.elements[".todo-shell"].style.left, "1152px");
   assert.equal(document.elements[".todo-shell"].style.top, "752px");
   const corrected = messages.find((message) => message.type === "TODO_UPDATE_SETTINGS")?.payload.ballPosition;
-  assert.equal(corrected?.left, 1152);
-  assert.equal(corrected?.top, 752);
+  assert.equal(corrected?.leftRatio, 1);
+  assert.equal(corrected?.topRatio, 1);
+  assert.equal("left" in corrected, false);
+  assert.equal("top" in corrected, false);
   assert.equal(corrected?.snapped, false);
   assert.equal(corrected?.side, null);
 });

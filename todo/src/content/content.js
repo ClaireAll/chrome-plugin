@@ -420,9 +420,10 @@
       side = "right";
       snapped = true;
     }
-    applyBallPosition({ left, top, side, snapped });
+    const position = createRatioBallPosition(left, top, side, snapped, rect);
+    applyBallPosition(position);
     state.ballDrag = null;
-    persistBallPosition({ left, top, side, snapped });
+    persistBallPosition(position);
   }
 
   function cancelBallDrag(event) {
@@ -460,24 +461,56 @@
   }
 
   function applyBallPosition(position) {
-    if (!position || !Number.isFinite(Number(position.left)) || !Number.isFinite(Number(position.top))) return;
     const rect = shell.getBoundingClientRect();
-    const left = clamp(Number(position.left), 0, Math.max(0, window.innerWidth - rect.width));
-    const top = clamp(Number(position.top), 0, Math.max(0, window.innerHeight - rect.height));
-    const normalized = {
-      left,
-      top,
-      side: position.side === "left" || position.side === "right" ? position.side : null,
-      snapped: position.snapped === true
-    };
-    state.ballPosition = normalized;
-    shell.style.left = `${left}px`;
-    shell.style.top = `${top}px`;
+    const applied = resolveBallPosition(position, rect);
+    if (!applied) return;
+    state.ballPosition = applied.position;
+    shell.style.left = `${applied.left}px`;
+    shell.style.top = `${applied.top}px`;
     shell.style.right = "auto";
     shell.style.transform = "none";
     return {
-      corrected: left !== Number(position.left) || top !== Number(position.top),
-      position: normalized
+      corrected: applied.corrected,
+      position: applied.position
+    };
+  }
+
+  function resolveBallPosition(position, rect) {
+    if (!position || typeof position !== "object") return null;
+    const maxLeft = Math.max(0, window.innerWidth - rect.width);
+    const maxTop = Math.max(0, window.innerHeight - rect.height);
+    const side = position.side === "left" || position.side === "right" ? position.side : null;
+    const snapped = position.snapped === true;
+    const rawLeftRatio = Number(position.leftRatio);
+    const rawTopRatio = Number(position.topRatio);
+    if (Number.isFinite(rawLeftRatio) || Number.isFinite(rawTopRatio)) {
+      const leftRatio = clampRatio(rawLeftRatio);
+      const topRatio = clampRatio(rawTopRatio);
+      return {
+        left: Math.round(leftRatio * maxLeft),
+        top: Math.round(topRatio * maxTop),
+        corrected: leftRatio !== rawLeftRatio || topRatio !== rawTopRatio,
+        position: { leftRatio, topRatio, snapped, side }
+      };
+    }
+    const left = clamp(Number(position.left), 0, maxLeft);
+    const top = clamp(Number(position.top), 0, maxTop);
+    return {
+      left,
+      top,
+      corrected: true,
+      position: createRatioBallPosition(left, top, side, snapped, rect)
+    };
+  }
+
+  function createRatioBallPosition(left, top, side, snapped, rect = shell.getBoundingClientRect()) {
+    const maxLeft = Math.max(0, window.innerWidth - rect.width);
+    const maxTop = Math.max(0, window.innerHeight - rect.height);
+    return {
+      leftRatio: maxLeft > 0 ? clamp(left, 0, maxLeft) / maxLeft : 0,
+      topRatio: maxTop > 0 ? clamp(top, 0, maxTop) / maxTop : 0,
+      snapped: snapped === true,
+      side
     };
   }
 
@@ -549,6 +582,10 @@
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), Math.max(min, max));
+  }
+
+  function clampRatio(value) {
+    return Number.isFinite(value) ? clamp(value, 0, 1) : 0;
   }
 
   function toDateTimeLocal(value) {

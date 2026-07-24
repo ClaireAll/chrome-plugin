@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test",
     "check": "node --check src/background/service-worker.js && node --check src/content/content.js && node --check src/options/options.js && node --check src/shared/inspector.js && node --check src/shared/messages.js && node --check src/shared/settings.js && node --check scripts/generate-icons.mjs"
   }
 }

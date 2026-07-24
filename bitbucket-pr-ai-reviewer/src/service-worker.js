@@ -1,6 +1,5 @@
 import { fetchPullRequestDiff } from "./bitbucket-client.js";
 import { extractVisualEvidence, reviewDiffChunk, reviewFindingFeedback } from "./deepseek-client.js";
-import { buildFeishuTaskUrl } from "./feishu-task-url.js";
 import "./image-attachments.js";
 import { chunkDiff, mergeFindings } from "./review-engine.js";
 import {
@@ -43,11 +42,10 @@ async function handleMessage(message, sender) {
     case "open-options":
       await chrome.runtime.openOptionsPage();
       return {};
-    case "open-feishu-task":
-      await chrome.tabs.create({ url: buildFeishuTaskUrl(message.taskKey) });
-      return {};
     case "get-review-history":
       return await getReviewHistory(message.url || sender.tab?.url);
+    case "get-review-request-status":
+      return getReviewRequestStatus(message.url || sender.tab?.url);
     case "delete-review-history":
       return { history: await deleteReviewHistoryRecord(message.id) };
     case "cancel-review-request":
@@ -62,7 +60,7 @@ async function handleMessage(message, sender) {
           images: message.images,
           signal
         }))
-      }));
+      }), { url: message.url || sender.tab?.url, tabId: sender.tab?.id, kind: "review" });
     case "review-finding-feedback":
       return await runReviewRequest(message.requestId, (signal) =>
         reviewFindingWithFeedback({
@@ -75,7 +73,8 @@ async function handleMessage(message, sender) {
           requestId: message.requestId,
           images: message.images,
           signal
-        })
+        }),
+        { url: message.url || sender.tab?.url, tabId: sender.tab?.id, kind: "finding" }
       );
     default:
       throw new Error(`未知扩展消息：${message?.type || "缺少类型"}`);
@@ -296,6 +295,8 @@ async function saveSettings(input) {
 }
 
 function notifyProgress(tabId, status, { requestId = "", url = "" } = {}) {
+  const activeRequest = activeRequests.get(String(requestId || ""));
+  if (activeRequest) activeRequest.status = status;
   if (!tabId) return;
   chrome.tabs.sendMessage(tabId, { type: "review-progress", status, requestId, url }).catch(() => {});
 }
@@ -383,27 +384,80 @@ function mutateReviewHistory(mutator, signal) {
   return operation;
 }
 
-async function runReviewRequest(requestId, operation) {
+async function runReviewRequest(requestId, operation, metadata = {}) {
   const id = String(requestId || "").trim();
   if (!id) return await operation(undefined);
 
   cancelReviewRequest(id);
   const controller = new AbortController();
-  activeRequests.set(id, controller);
+  const request = {
+    controller,
+    id,
+    url: String(metadata.url || ""),
+    reviewKey: getReviewRequestKey(metadata.url),
+    tabId: metadata.tabId,
+    kind: metadata.kind || "review",
+    status: "正在启动评审...",
+    startedAt: Date.now()
+  };
+  activeRequests.set(id, request);
 
   try {
-    return await operation(controller.signal);
+    const result = await operation(controller.signal);
+    notifyReviewRequestFinished(request, "review-completed");
+    return result;
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      notifyReviewRequestFinished(request, "review-failed", error.message || String(error));
+    }
+    throw error;
   } finally {
-    if (activeRequests.get(id) === controller) activeRequests.delete(id);
+    if (activeRequests.get(id) === request) activeRequests.delete(id);
   }
+}
+
+function getReviewRequestStatus(url) {
+  const reviewKey = getReviewRequestKey(url);
+  const request = Array.from(activeRequests.values())
+    .filter((item) => item.reviewKey === reviewKey)
+    .sort((left, right) => right.startedAt - left.startedAt)[0];
+
+  if (!request) return { active: false };
+  return {
+    active: true,
+    requestId: request.id,
+    kind: request.kind,
+    status: request.status,
+    startedAt: request.startedAt
+  };
+}
+
+function getReviewRequestKey(url) {
+  try {
+    return createReviewKey(parsePullRequestUrl(url));
+  } catch {
+    return String(url || "");
+  }
+}
+
+function notifyReviewRequestFinished(request, type, error = "") {
+  if (!request.tabId) return;
+  chrome.tabs
+    .sendMessage(request.tabId, {
+      type,
+      requestId: request.id,
+      url: request.url,
+      error
+    })
+    .catch(() => {});
 }
 
 function cancelReviewRequest(requestId) {
   const id = String(requestId || "").trim();
-  const controller = activeRequests.get(id);
-  if (!controller) return false;
+  const request = activeRequests.get(id);
+  if (!request) return false;
 
-  controller.abort(new DOMException("评审请求已取消。", "AbortError"));
+  request.controller.abort(new DOMException("评审请求已取消。", "AbortError"));
   activeRequests.delete(id);
   return true;
 }

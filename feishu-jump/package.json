@@ -1,0 +1,10 @@
+{
+  "name": "feishu-task-jumper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A browser extension that opens Feishu Project task detail pages by key.",
+  "scripts": {
+    "check": "node --check popup.js && node --check src/urlBuilder.js"
+  },
+  "devDependencies": {}
+}

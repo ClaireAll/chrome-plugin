@@ -10,7 +10,6 @@ test("content source exposes the instrument launcher and panel summary", () => {
   assert.match(source, /class="todo-ball-tick todo-ball-tick--teal"/);
   assert.match(source, /class="todo-ball-tick todo-ball-tick--coral"/);
   assert.match(source, /class="todo-panel-header"/);
-  assert.match(source, /class="todo-panel-count"/);
   assert.match(source, /ball\.setAttribute\("aria-label", `未完成待办 \$\{unfinishedCount\} 项`\)/);
 });
 
@@ -19,6 +18,27 @@ test("content source exposes an accessible add button and alert toast", () => {
 
   assert.match(source, /<button class="todo-create-submit" type="submit" aria-label="添加待办">添加<\/button>/);
   assert.match(source, /<div class="todo-toast" role="alert" aria-live="assertive" aria-atomic="true" hidden><\/div>/);
+});
+
+test("content panel exposes local outline icons and options entries", async () => {
+  const source = readFileSync("src/content/content.js", "utf8");
+
+  assert.match(source, /class="todo-header-settings" type="button" aria-label="打开设置"/);
+  assert.match(source, /class="todo-header-manage" type="button" aria-label="打开管理页"/);
+  assert.match(source, /const TODO_ICONS = Object\.freeze/);
+  assert.match(source, /class="todo-task-check"/);
+  assert.doesNotMatch(source, /todo-action-(?:color|reminder|complete|delete)[^>]*>[●◷✔️❌]/);
+
+  const { context, document, messages } = createContentContext();
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+
+  document.elements[".todo-header-settings"].dispatch("click", {});
+  document.elements[".todo-header-manage"].dispatch("click", {});
+
+  assert.equal(messages.filter((message) => message.type === "TODO_OPEN_OPTIONS").length, 2);
 });
 
 test("content ball displays unfinished count and toggles the panel", async () => {
@@ -32,7 +52,6 @@ test("content ball displays unfinished count and toggles the panel", async () =>
   await delay(0);
 
   assert.equal(document.elements[".todo-ball-count"].textContent, "2");
-  assert.equal(document.elements[".todo-panel-count"].textContent, "2 项待办");
   assert.equal(document.elements[".todo-ball"].attributes["aria-label"], "未完成待办 2 项");
   document.elements[".todo-ball"].dispatch("click", {});
   await delay(0);
@@ -326,7 +345,7 @@ function createContentContext(options = {}) {
 
 function createDocumentStub(options = {}) {
   const elements = Object.fromEntries([
-    ".todo-shell", ".todo-ball", ".todo-ball-count", ".todo-panel", ".todo-panel-count", ".todo-create-form", ".todo-create-input", ".todo-list", ".todo-toast"
+    ".todo-shell", ".todo-ball", ".todo-ball-count", ".todo-panel", ".todo-header-settings", ".todo-header-manage", ".todo-create-form", ".todo-create-input", ".todo-list", ".todo-toast"
   ].map((selector) => [selector, new ElementStub("div", null, selector, options.rects || {})]));
   for (const element of Object.values(elements)) element.elements = elements;
   elements[".todo-panel"].hidden = true;

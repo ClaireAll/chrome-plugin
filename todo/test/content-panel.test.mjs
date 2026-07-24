@@ -63,6 +63,22 @@ test("content ball displays unfinished count and toggles the panel", async () =>
   assert.equal(document.elements[".todo-panel"].hidden, false);
 });
 
+test("todo rows show a visible reminder action and reminder time", async () => {
+  const { context, document } = createContentContext({
+    items: [{ id: "a", text: "Task A", reminderAt: "2026-07-23T09:05:00.000Z" }]
+  });
+
+  vm.runInNewContext(readFileSync("src/content/content.js", "utf8"), context, {
+    filename: "src/content/content.js"
+  });
+  await delay(0);
+
+  const html = document.elements[".todo-list"].innerHTML;
+  assert.match(html, /class="todo-action-reminder-label">提醒<\/span>/);
+  assert.match(html, /class="todo-reminder-chip"/);
+  assert.match(html, /提醒\s+\d{2}\/\d{2}\s+\d{2}:\d{2}/);
+});
+
 test("clicking outside the panel closes the open panel", async () => {
   const { context, document } = createContentContext({
     items: [{ id: "a", text: "Task A" }]

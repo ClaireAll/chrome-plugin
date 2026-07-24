@@ -176,13 +176,20 @@
     list.innerHTML = state.items.map((item) => {
       const colorPalette = state.activeColorId === item.id ? renderColorPalette(item) : "";
       const reminder = state.activeReminderId === item.id ? renderReminderPopover(item) : "";
+      const reminderChip = renderReminderChip(item);
+      const reminderLabel = formatReminderLabel(item.reminderAt);
+      const reminderClass = item.reminderAt ? " todo-action-reminder--set" : "";
+      const reminderAria = item.reminderAt ? `修改提醒：${reminderLabel}` : "设置提醒";
       return `
         <article class="todo-item" draggable="true" data-todo-id="${escapeAttribute(item.id)}" style="--todo-color:${escapeAttribute(item.color || "#ffffff")}">
           <div class="todo-item-main">
-            <div class="todo-text" contenteditable="true" data-todo-id="${escapeAttribute(item.id)}">${escapeHtml(item.text)}</div>
+            <div class="todo-item-copy">
+              <div class="todo-text" contenteditable="true" data-todo-id="${escapeAttribute(item.id)}">${escapeHtml(item.text)}</div>
+              ${reminderChip}
+            </div>
             <div class="todo-item-actions">
               <button class="todo-action-color" type="button" data-todo-id="${escapeAttribute(item.id)}" title="选择颜色" aria-label="选择颜色"><span class="todo-color-dot" aria-hidden="true"></span></button>
-              <button class="todo-action-reminder" type="button" data-todo-id="${escapeAttribute(item.id)}" title="设置提醒" aria-label="设置提醒">${iconMarkup("bell")}</button>
+              <button class="todo-action-reminder${reminderClass}" type="button" data-todo-id="${escapeAttribute(item.id)}" title="${escapeAttribute(reminderAria)}" aria-label="${escapeAttribute(reminderAria)}">${iconMarkup("bell")}<span class="todo-action-reminder-label">提醒</span></button>
               <button class="todo-action-complete" type="button" data-todo-id="${escapeAttribute(item.id)}" title="完成" aria-label="完成">${iconMarkup("check-circle")}</button>
               <button class="todo-action-delete" type="button" data-todo-id="${escapeAttribute(item.id)}" title="删除" aria-label="删除">${iconMarkup("trash-2")}</button>
             </div>
@@ -192,6 +199,12 @@
         </article>
       `;
     }).join("");
+  }
+
+  function renderReminderChip(item) {
+    const label = formatReminderLabel(item.reminderAt);
+    if (!label) return "";
+    return `<div class="todo-reminder-chip">${iconMarkup("bell")}<span>提醒 ${escapeHtml(label)}</span></div>`;
   }
 
   function renderColorPalette(item) {
@@ -605,6 +618,12 @@
     if (Number.isNaN(date.getTime())) return "";
     const offset = date.getTimezoneOffset() * 60000;
     return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  }
+
+  function formatReminderLabel(value) {
+    const localValue = toDateTimeLocal(value);
+    if (!localValue) return "";
+    return `${localValue.slice(5, 7)}/${localValue.slice(8, 10)} ${localValue.slice(11, 16)}`;
   }
 
   function escapeHtml(value) {

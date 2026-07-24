@@ -17,6 +17,12 @@
 
 ## Manual Verification
 
+### Visual Refresh
+
+- Confirm the 48px launcher shows the unfinished count with a cobalt ring plus teal and coral ticks, while drag and edge-snap behavior remains unchanged.
+- Confirm the panel title, creation band, long-text wrapping, action order, color rail, popovers, and error toast remain readable at narrow and short sizes.
+- Confirm the management page uses its desktop work grid, collapses cleanly on a narrow window, and the local ECharts heatmap still fills its summary band.
+
 1. Load unpacked from this folder.
 2. Open an ordinary `http` or `https` page and confirm the todo ball appears.
 3. Add two unfinished todos and confirm the ball count updates.

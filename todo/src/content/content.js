@@ -16,7 +16,7 @@
   };
   const DEFAULT_COLORS = ["#ffffff", "#fef3c7", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe"];
   const EDGE_SNAP_THRESHOLD = 24;
-  const PANEL_WIDTH = 420;
+  const PANEL_WIDTH = 320;
   const PANEL_HEIGHT = 560;
   const PANEL_VIEWPORT_MARGIN = 12;
   const TOAST_MAX_WIDTH = 300;

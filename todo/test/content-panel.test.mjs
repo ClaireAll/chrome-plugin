@@ -20,6 +20,12 @@ test("content source exposes an accessible add button and alert toast", () => {
   assert.match(source, /<div class="todo-toast" role="alert" aria-live="assertive" aria-atomic="true" hidden><\/div>/);
 });
 
+test("content panel positioning uses the screenshot panel width", () => {
+  const source = readFileSync("src/content/content.js", "utf8");
+
+  assert.match(source, /const PANEL_WIDTH = 320;/);
+});
+
 test("content panel exposes local outline icons and options entries", async () => {
   const source = readFileSync("src/content/content.js", "utf8");
 

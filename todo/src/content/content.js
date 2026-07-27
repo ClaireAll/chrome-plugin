@@ -16,7 +16,7 @@
     REMINDER_DUE: "TODO_REMINDER_DUE"
   };
   const DEFAULT_COLORS = ["#ffffff", "#fef3c7", "#dcfce7", "#dbeafe", "#fce7f3", "#ede9fe"];
-  const PANEL_WIDTH = 320;
+  const PANEL_WIDTH = 380;
   const PANEL_HEIGHT = 560;
   const PANEL_VIEWPORT_MARGIN = 12;
   const TOAST_MAX_WIDTH = 300;
@@ -49,6 +49,28 @@
         <path d="M10 11v6"></path>
         <path d="M14 11v6"></path>
       </svg>
+    `,
+    "clipboard-list": `
+      <svg class="todo-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect width="8" height="4" x="8" y="2" rx="1"></rect>
+        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+        <path d="M8 11h8"></path>
+        <path d="M8 16h6"></path>
+      </svg>
+    `,
+    plus: `
+      <svg class="todo-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"></path>
+        <path d="M12 5v14"></path>
+      </svg>
+    `,
+    calendar: `
+      <svg class="todo-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 2v4"></path>
+        <path d="M16 2v4"></path>
+        <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+        <path d="M3 10h18"></path>
+      </svg>
     `
   });
   const state = {
@@ -73,13 +95,21 @@
       </button>
       <section class="todo-panel" hidden>
         <header class="todo-panel-header">
-          <h2>我的待办</h2>
+          <div class="todo-panel-title">
+            <span class="todo-panel-title-icon" aria-hidden="true">${iconMarkup("clipboard-list")}</span>
+            <h2>我的待办</h2>
+            <span class="todo-panel-count" aria-label="未完成待办 0 项">0</span>
+          </div>
           <div class="todo-panel-header-actions">
             <button class="todo-header-settings" type="button" aria-label="打开设置" title="打开设置">${iconMarkup("settings")}</button>
           </div>
         </header>
         <form class="todo-create-form">
-          <input class="todo-create-input" autocomplete="off" placeholder="添加新任务..." />
+          <div class="todo-create-control">
+            <span class="todo-create-icon" aria-hidden="true">${iconMarkup("plus")}</span>
+            <input class="todo-create-input" autocomplete="off" placeholder="添加新任务..." />
+            <kbd class="todo-create-key">Enter</kbd>
+          </div>
           <button class="todo-create-submit" type="submit" aria-label="添加待办">添加</button>
         </form>
         <div class="todo-list"></div>
@@ -92,6 +122,7 @@
   const shell = root.querySelector(".todo-shell");
   const ball = root.querySelector(".todo-ball");
   const ballCount = root.querySelector(".todo-ball-count");
+  const panelCount = root.querySelector(".todo-panel-count");
   const panel = root.querySelector(".todo-panel");
   const headerSettings = root.querySelector(".todo-header-settings");
   const createForm = root.querySelector(".todo-create-form");
@@ -168,7 +199,10 @@
     const unfinishedCount = state.items.length;
     ballCount.textContent = String(unfinishedCount);
     ball.setAttribute("aria-label", `未完成待办 ${unfinishedCount} 项`);
+    panelCount.textContent = String(unfinishedCount);
+    panelCount.setAttribute("aria-label", `未完成待办 ${unfinishedCount} 项`);
     renderList();
+    if (state.isOpen) positionPanel();
   }
 
   function renderList() {
@@ -186,13 +220,13 @@
       return `
         <article class="todo-item" draggable="true" data-todo-id="${escapeAttribute(item.id)}" style="--todo-color:${escapeAttribute(item.color || "#ffffff")}">
           <div class="todo-item-main">
+            <button class="todo-action-color" type="button" data-todo-id="${escapeAttribute(item.id)}" title="选择颜色" aria-label="选择颜色"><span class="todo-color-dot" aria-hidden="true"></span></button>
             <div class="todo-item-copy">
               <div class="todo-text" contenteditable="true" data-todo-id="${escapeAttribute(item.id)}">${escapeHtml(item.text)}</div>
               ${reminderChip}
             </div>
             <div class="todo-item-actions">
-              <button class="todo-action-color" type="button" data-todo-id="${escapeAttribute(item.id)}" title="选择颜色" aria-label="选择颜色"><span class="todo-color-dot" aria-hidden="true"></span></button>
-              <button class="todo-action-reminder${reminderClass}" type="button" data-todo-id="${escapeAttribute(item.id)}" title="${escapeAttribute(reminderAria)}" aria-label="${escapeAttribute(reminderAria)}">${iconMarkup("bell")}<span class="todo-action-reminder-label">提醒</span></button>
+              <button class="todo-action-reminder${reminderClass}" type="button" data-todo-id="${escapeAttribute(item.id)}" title="${escapeAttribute(reminderAria)}" aria-label="${escapeAttribute(reminderAria)}">${iconMarkup("bell")}</button>
               <button class="todo-action-complete" type="button" data-todo-id="${escapeAttribute(item.id)}" title="完成" aria-label="完成">${iconMarkup("check-circle")}</button>
               <button class="todo-action-delete" type="button" data-todo-id="${escapeAttribute(item.id)}" title="删除" aria-label="删除">${iconMarkup("trash-2")}</button>
             </div>
@@ -207,7 +241,7 @@
   function renderReminderChip(item) {
     const label = formatReminderLabel(item.reminderAt);
     if (!label) return "";
-    return `<div class="todo-reminder-chip">${iconMarkup("bell")}<span>提醒 ${escapeHtml(label)}</span></div>`;
+    return `<div class="todo-reminder-chip">${iconMarkup("calendar")}<span>${escapeHtml(formatReminderDisplay(item.reminderAt))}</span></div>`;
   }
 
   function renderColorPalette(item) {
@@ -360,9 +394,21 @@
   }
 
   function handleTodoDragOver(event) {
+    if (!state.draggedTodoId) return;
     const item = event.target.closest?.(".todo-item");
-    if (!item || !state.draggedTodoId || item.dataset.todoId === state.draggedTodoId) return;
+    if (!item || !list.contains(item)) {
+      if (list.contains(event.target)) {
+        event.preventDefault();
+        clearTodoDragMarkers();
+      }
+      return;
+    }
+    if (item.dataset.todoId === state.draggedTodoId) {
+      clearTodoDragMarkers();
+      return;
+    }
     event.preventDefault();
+    clearTodoDragMarkers();
     item.classList.add("todo-drag-over");
   }
 
@@ -370,22 +416,42 @@
     const target = event.target.closest?.(".todo-item");
     const sourceId = state.draggedTodoId;
     clearTodoDrag();
-    if (!target || !sourceId || target.dataset.todoId === sourceId) return;
+    if (!sourceId) return;
+    if (!target || !list.contains(target)) {
+      if (list.contains(event.target)) moveTodoToEnd(sourceId, event);
+      return;
+    }
+    if (target.dataset.todoId === sourceId) return;
     event.preventDefault();
     const rect = target.getBoundingClientRect();
     const position = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+    moveTodo(sourceId, target.dataset.todoId, position);
+  }
+
+  function moveTodoToEnd(sourceId, event) {
+    const target = state.items[state.items.length - 1];
+    if (!target || target.id === sourceId) return;
+    event.preventDefault();
+    moveTodo(sourceId, target.id, "after");
+  }
+
+  function moveTodo(sourceId, targetId, position) {
     const sourceIndex = state.items.findIndex((item) => item.id === sourceId);
-    const targetIndex = state.items.findIndex((item) => item.id === target.dataset.todoId);
+    const targetIndex = state.items.findIndex((item) => item.id === targetId);
     if (sourceIndex < 0 || targetIndex < 0) return;
     const [moved] = state.items.splice(sourceIndex, 1);
-    const insertionIndex = state.items.findIndex((item) => item.id === target.dataset.todoId) + (position === "after" ? 1 : 0);
+    const insertionIndex = state.items.findIndex((item) => item.id === targetId) + (position === "after" ? 1 : 0);
     state.items.splice(insertionIndex, 0, moved);
-    state.reorderOperations.push({ sourceId, targetId: target.dataset.todoId, position });
+    state.reorderOperations.push({ sourceId, targetId, position });
     render();
   }
 
   function clearTodoDrag() {
     state.draggedTodoId = "";
+    clearTodoDragMarkers();
+  }
+
+  function clearTodoDragMarkers() {
     for (const item of list.querySelectorAll?.(".todo-drag-over") || []) item.classList.remove("todo-drag-over");
   }
 
@@ -468,9 +534,12 @@
   }
 
   function getEffectivePanelDimensions() {
+    const maxHeight = Math.max(0, Math.min(PANEL_HEIGHT, window.innerHeight - PANEL_VIEWPORT_MARGIN * 2));
+    const rect = panel.getBoundingClientRect();
+    const measuredHeight = Number.isFinite(rect.height) && rect.height > 0 ? rect.height : maxHeight;
     return {
       width: Math.max(0, Math.min(PANEL_WIDTH, window.innerWidth - PANEL_VIEWPORT_MARGIN * 2)),
-      height: Math.max(0, Math.min(PANEL_HEIGHT, window.innerHeight - PANEL_VIEWPORT_MARGIN * 2))
+      height: Math.max(0, Math.min(measuredHeight, maxHeight))
     };
   }
 
@@ -652,6 +721,15 @@
     const localValue = toDateTimeLocal(value);
     if (!localValue) return "";
     return `${localValue.slice(5, 7)}/${localValue.slice(8, 10)} ${localValue.slice(11, 16)}`;
+  }
+
+  function formatReminderDisplay(value) {
+    const localValue = toDateTimeLocal(value);
+    if (!localValue) return "";
+    const today = toDateTimeLocal(new Date().toISOString()).slice(0, 10);
+    const date = localValue.slice(0, 10);
+    const time = localValue.slice(11, 16);
+    return date === today ? `今天 ${time}` : `${localValue.slice(5, 7)}/${localValue.slice(8, 10)} ${time}`;
   }
 
   function escapeHtml(value) {

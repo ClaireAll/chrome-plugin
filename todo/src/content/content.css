@@ -6,6 +6,9 @@
   --todo-coral: #e76f51;
   --todo-slate: #64748b;
   --todo-divider: #dde3ec;
+  --todo-soft-bg: #fbfcff;
+  --todo-soft-border: #e8edf5;
+  --todo-muted: #7b8799;
   --todo-panel-header-height: 52px;
   --todo-create-band-height: 52px;
   all: initial;
@@ -94,15 +97,22 @@
   top: 12px;
   right: 12px;
   box-sizing: border-box;
-  width: 320px;
-  height: 560px;
-  width: min(320px, calc(100vw - 24px));
-  height: min(560px, calc(100vh - 24px));
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  width: min(380px, calc(100vw - 24px));
+  height: auto;
+  max-height: 560px;
+  max-height: min(560px, calc(100vh - 24px));
   overflow: hidden;
-  border: 1px solid var(--todo-divider);
-  border-radius: 8px;
+  border: 1px solid var(--todo-soft-border);
+  border-radius: 14px;
   background: var(--todo-surface);
-  box-shadow: 0 16px 40px rgb(24 33 47 / 18%);
+  box-shadow: 0 20px 44px rgb(24 33 47 / 14%);
+}
+
+#todo-extension-root .todo-panel[hidden] {
+  display: none;
 }
 
 #todo-extension-root .todo-panel-header {
@@ -112,15 +122,43 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--todo-divider);
+  padding: 0 16px;
+  border-bottom: 1px solid #edf1f7;
   background: #fff;
+}
+
+#todo-extension-root .todo-panel-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+#todo-extension-root .todo-panel-title-icon {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  color: #6b778c;
 }
 
 #todo-extension-root .todo-panel-header h2 {
   margin: 0;
   color: var(--todo-ink);
-  font: 700 16px/1 Arial, sans-serif;
+  font: 800 16px/1 Arial, sans-serif;
+}
+
+#todo-extension-root .todo-panel-count {
+  display: inline-flex;
+  min-width: 20px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #f0f3f8;
+  color: #7b8799;
+  font: 700 12px/1 Arial, sans-serif;
 }
 
 #todo-extension-root .todo-panel-header-actions {
@@ -132,14 +170,14 @@
 #todo-extension-root .todo-header-settings {
   box-sizing: border-box;
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   place-items: center;
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #475569;
+  color: #7a8798;
   cursor: pointer;
 }
 
@@ -153,36 +191,74 @@
   box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  height: 52px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--todo-divider);
+  gap: 10px;
+  min-height: 58px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #edf1f7;
   background: #fff;
 }
 
-#todo-extension-root .todo-create-input {
+#todo-extension-root .todo-create-control {
   box-sizing: border-box;
+  display: grid;
+  min-width: 0;
+  height: 36px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
   width: 100%;
-  padding: 0 10px;
-  border: 1px solid #d8dee8;
-  border-radius: 5px;
+  padding: 0 9px 0 12px;
+  border: 1px solid #e1e7f0;
+  border-radius: 8px;
   background: var(--todo-surface);
-  color: var(--todo-ink);
-  font: 14px/1.35 Arial, sans-serif;
+  box-shadow: 0 1px 2px rgb(24 33 47 / 3%);
 }
 
-#todo-extension-root .todo-create-input:focus {
+#todo-extension-root .todo-create-control:focus-within {
   border-color: var(--todo-cobalt);
   outline: 2px solid rgb(37 99 235 / 22%);
   outline-offset: 1px;
 }
 
+#todo-extension-root .todo-create-icon {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  color: #8a96a8;
+}
+
+#todo-extension-root .todo-create-input {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--todo-ink);
+  font: 14px/1.35 Arial, sans-serif;
+  outline: none;
+}
+
+#todo-extension-root .todo-create-input::placeholder {
+  color: #9aa6b7;
+}
+
+#todo-extension-root .todo-create-key {
+  padding: 2px 5px;
+  border: 1px solid #e1e7f0;
+  border-radius: 4px;
+  background: #f7f9fc;
+  color: #9aa6b7;
+  font: 700 10px/1 Arial, sans-serif;
+}
+
 #todo-extension-root .todo-create-submit {
-  min-width: 48px;
+  min-width: 52px;
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--todo-cobalt);
-  border-radius: 5px;
+  border-radius: 8px;
   background: var(--todo-cobalt);
   color: #fff;
   cursor: pointer;
@@ -201,35 +277,44 @@
 
 #todo-extension-root .todo-list {
   box-sizing: border-box;
-  height: calc(100% - var(--todo-panel-header-height) - var(--todo-create-band-height));
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 12px 12px 14px;
   overflow: auto;
-  background: var(--todo-surface);
+  background: var(--todo-soft-bg);
 }
 
 #todo-extension-root .todo-item {
   box-sizing: border-box;
   position: relative;
-  border: 0;
-  border-bottom: 1px solid var(--todo-divider);
+  margin: 0 0 12px;
+  overflow: hidden;
+  border: 1px solid #edf1f7;
+  border-radius: 10px;
   background: var(--todo-surface);
+  box-shadow: 0 8px 22px rgb(24 33 47 / 8%);
+}
+
+#todo-extension-root .todo-item:last-child {
+  margin-bottom: 0;
 }
 
 #todo-extension-root .todo-item::before {
   content: "";
   position: absolute;
-  left: 8px;
-  top: 12px;
-  bottom: 12px;
+  left: 0;
+  top: 0;
+  bottom: 0;
   width: 3px;
-  border-radius: 999px;
+  border-radius: 0 999px 999px 0;
   background: var(--todo-color, #2563eb);
 }
 
 #todo-extension-root .todo-item-main {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 10px 14px 20px;
+  gap: 12px;
+  padding: 16px 14px 16px 13px;
 }
 
 #todo-extension-root .todo-item-copy {
@@ -245,7 +330,7 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   color: var(--todo-ink);
-  font: 13px/1.6 Arial, sans-serif;
+  font: 800 14px/1.45 Arial, sans-serif;
   outline: none;
 }
 
@@ -253,7 +338,7 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 #todo-extension-root .todo-color-choice,
@@ -269,27 +354,30 @@
 #todo-extension-root .todo-item-actions button {
   box-sizing: border-box;
   display: grid;
-  width: 20px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   place-items: center;
   border: 0;
-  border-radius: 4px;
+  border-radius: 999px;
   background: transparent;
-  color: #536171;
+  color: #7b8799;
   cursor: pointer;
   font: 14px/1 Arial, sans-serif;
 }
 
-#todo-extension-root .todo-item-actions .todo-action-reminder {
-  display: inline-grid;
-  width: auto;
-  min-width: 48px;
-  grid-auto-flow: column;
-  gap: 3px;
-  padding: 0 4px;
-  color: #475569;
-  font: 700 12px/1 Arial, sans-serif;
+#todo-extension-root .todo-action-color {
+  box-sizing: border-box;
+  display: grid;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
 }
 
 #todo-extension-root .todo-action-reminder--set,
@@ -303,8 +391,8 @@
 
 #todo-extension-root .todo-icon {
   display: block;
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   pointer-events: none;
 }
 
@@ -312,7 +400,7 @@
   display: block;
   width: 12px;
   height: 12px;
-  border: 1px solid rgb(15 23 42 / 8%);
+  border: 0;
   border-radius: 50%;
   background: var(--todo-color, #2563eb);
 }
@@ -324,7 +412,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font: 12px/1.3 Arial, sans-serif;
+  color: #7b8799;
+  font: 600 12px/1.3 Arial, sans-serif;
 }
 
 #todo-extension-root .todo-reminder-chip .todo-icon {

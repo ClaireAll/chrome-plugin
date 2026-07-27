@@ -192,9 +192,13 @@ input:focus-visible {
   border-top: 1px solid #DDE3EC;
 }
 
-.completed-row input {
+.completed-text {
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
+  color: #18212F;
+  font-size: 14px;
+  line-height: 1.45;
 }
 
 .completed-time {
@@ -255,7 +259,7 @@ input:focus-visible {
   place-items: center;
   border: 1px solid #FFFFFF;
   border-radius: 999px;
-  background: #0F172A;
+  background: #EF4444;
   color: #FFFFFF;
   cursor: pointer;
   font: 700 10px/1 Arial, sans-serif;
@@ -263,13 +267,13 @@ input:focus-visible {
 }
 
 .color-preset-delete:hover {
-  background: #1D4ED8;
+  background: #DC2626;
   border-color: #FFFFFF;
   color: #FFFFFF;
 }
 
 .color-preset-delete:focus-visible {
-  background: #1D4ED8;
+  background: #DC2626;
   outline: 2px solid #0F172A;
   outline-offset: 2px;
 }

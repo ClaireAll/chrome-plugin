@@ -56,16 +56,9 @@ function renderCompletedRecords() {
   for (const record of records) {
     const row = document.createElement("div");
     row.className = "completed-row";
-    const input = document.createElement("input");
-    input.value = record.text;
-    input.setAttribute("aria-label", "完成任务文本");
-    input.disabled = completedMutationBusy;
-    input.addEventListener("change", async () => {
-      await handleCompletedMutation(
-        () => sendMessage(MESSAGE_TYPES.UPDATE_COMPLETED_RECORD, { recordIndex: record.recordIndex, text: input.value }),
-        "完成记录保存失败"
-      );
-    });
+    const text = document.createElement("div");
+    text.className = "completed-text";
+    text.textContent = record.text;
     const time = document.createElement("time");
     time.className = "completed-time";
     time.dateTime = record.completedAt;
@@ -77,7 +70,7 @@ function renderCompletedRecords() {
       );
     });
     deleteButton.disabled = completedMutationBusy;
-    row.append(input, time, deleteButton);
+    row.append(text, time, deleteButton);
     elements.completedList.append(row);
   }
 }

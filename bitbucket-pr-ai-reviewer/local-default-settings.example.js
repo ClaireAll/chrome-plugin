@@ -9,6 +9,6 @@ export const LOCAL_DEFAULT_SETTINGS = {
   deepseekApiKey: "",
   deepseekModel: "deepseek-v4-flash",
   maxDiffCharsPerChunk: 12000,
-  contextLines: 3,
+  contextLines: 1000,
   reviewRules: ""
 };

@@ -1087,7 +1087,7 @@
                       <div class="bbai-settings-section-title"><span>03</span><strong>评审策略</strong></div>
                       <div class="bbai-settings-grid">
                         <label>单个片段最大字符数<input name="maxDiffCharsPerChunk" type="number" min="4000" max="50000" step="1000" value="${escapeHtml(settings.maxDiffCharsPerChunk)}"></label>
-                        <label>diff 上下文行数<input name="contextLines" type="number" min="0" max="20" step="1" value="${escapeHtml(settings.contextLines)}"></label>
+                        <label>diff 上下文行数<input name="contextLines" type="number" min="1000" max="10000" step="100" value="${escapeHtml(settings.contextLines)}"></label>
                       </div>
                       <label>评审规则<textarea name="reviewRules" rows="7" placeholder="填写额外评审关注点">${escapeHtml(settings.reviewRules)}</textarea></label>
                     </section>

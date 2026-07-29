@@ -15,7 +15,7 @@ const DEFAULTS = {
   deepseekApiKey: "",
   deepseekModel: "deepseek-v4-flash",
   maxDiffCharsPerChunk: 12000,
-  contextLines: 3,
+  contextLines: 1000,
   reviewRules: DEFAULT_REVIEW_RULES,
   ...LOCAL_DEFAULT_SETTINGS
 };
@@ -36,7 +36,7 @@ export function normalizeSettings(input = {}) {
     deepseekApiKey: trimOrDefault(input.deepseekApiKey, DEFAULTS.deepseekApiKey),
     deepseekModel: trimOrDefault(input.deepseekModel, DEFAULTS.deepseekModel),
     maxDiffCharsPerChunk: clampNumber(input.maxDiffCharsPerChunk, 4000, 50000, DEFAULTS.maxDiffCharsPerChunk),
-    contextLines: clampNumber(input.contextLines, 0, 20, DEFAULTS.contextLines),
+    contextLines: clampNumber(input.contextLines, 1000, 10000, DEFAULTS.contextLines),
     reviewRules: reviewRules || DEFAULT_REVIEW_RULES
   };
 }
@@ -63,7 +63,9 @@ function trimOrDefault(value, fallback) {
 
 function clampNumber(value, min, max, fallback) {
   const parsed = Number.parseInt(value, 10);
+  const parsedFallback = Number.parseInt(fallback, 10);
+  const safeFallback = Number.isFinite(parsedFallback) ? parsedFallback : min;
 
-  if (!Number.isFinite(parsed)) return fallback;
+  if (!Number.isFinite(parsed)) return Math.max(min, Math.min(max, safeFallback));
   return Math.max(min, Math.min(max, parsed));
 }

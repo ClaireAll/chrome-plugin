@@ -24,6 +24,7 @@ export async function reviewDiffChunk({
   followUpFeedback = "",
   previousFindings = [],
   visualEvidence = "",
+  fineDesignReference,
   signal
 }) {
   const prompt = buildReviewPrompt({
@@ -37,7 +38,8 @@ export async function reviewDiffChunk({
     reviewRules: settings.reviewRules,
     followUpFeedback,
     previousFindings,
-    visualEvidence
+    visualEvidence,
+    fineDesignReference
   });
 
   const { value: findings, rawText } = await requestStructuredCompletion(settings, prompt, parseReviewResponse, { signal });
@@ -60,6 +62,7 @@ export async function reviewFindingFeedback({
   feedback,
   feedbackRounds,
   images = [],
+  fineDesignReference,
   signal
 }) {
   const prompt = buildFindingFeedbackPrompt({
@@ -72,7 +75,8 @@ export async function reviewFindingFeedback({
     category,
     feedback,
     feedbackRounds,
-    reviewRules: settings.reviewRules
+    reviewRules: settings.reviewRules,
+    fineDesignReference
   });
 
   const { value, rawText } = await requestStructuredCompletion(settings, prompt, parseFindingFeedbackResponse, { images, signal });

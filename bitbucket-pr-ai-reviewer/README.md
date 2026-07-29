@@ -49,6 +49,12 @@
 4. 点击“审查 PR”。
 5. 在面板中查看紧急问题和改进建议。
 
+## 组件规范审查
+
+当 PR 属于 `FX/fx-data-web` 或 `FX/fine-design-biz` 时，扩展会根据 diff 中出现的 JSX 组件名，优先从 `FX/fine-design` 仓库读取匹配组件源码片段，作为 AI 审查时的组件 API 参考。
+
+这类上下文用于发现组件使用不规范的问题，例如 `Instruction` 组件如果已经支持传入图标相关属性，就应提示不要把图标 JSX 拼进 `message`，而是使用组件自身的图标属性，并让 `message` 只承载文本内容。
+
 ## 图片反馈
 
 完成一次评审后，可以在两处向 AI 提供图片上下文：
@@ -85,6 +91,7 @@
 ## 实现说明
 
 - Bitbucket 请求使用 Server/Data Center 风格的 REST 路径：`/rest/api/latest/projects/{projectKey}/repos/{repoSlug}/pull-requests/{id}`。
+- 对 `fx-data-web` 和 `fine-design-biz` 的 PR，扩展会额外按需读取 `FX/fine-design` 中的组件源码片段，读取失败不会阻断本次审查。
 - DeepSeek 请求通过 `POST /chat/completions` 发起，并要求返回 JSON。
 - 较大的 diff 会先拆分为多个分块，再逐块审查。
 - 默认审查规则重点关注正确性、行为回归、缺失测试、安全性、性能以及前端特有问题。
@@ -94,6 +101,5 @@
 进入 `bitbucket-pr-ai-reviewer` 目录后运行：
 
 ```bash
-npm test
 npm run check
 ```

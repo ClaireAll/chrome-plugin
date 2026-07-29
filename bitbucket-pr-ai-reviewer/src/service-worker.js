@@ -1,4 +1,4 @@
-import { fetchPullRequestDiff } from "./bitbucket-client.js";
+import { fetchFineDesignComponentReferences, fetchPullRequestDiff } from "./bitbucket-client.js";
 import { extractVisualEvidence, reviewDiffChunk, reviewFindingFeedback } from "./deepseek-client.js";
 import "./image-attachments.js";
 import { chunkDiff, mergeFindings } from "./review-engine.js";
@@ -100,6 +100,8 @@ async function reviewCurrentPullRequest(
   progress(normalizedFeedback ? "正在根据补充反馈重新读取合并请求..." : "正在读取合并请求元数据...");
   const { pullRequestInfo, commits, changedFiles, diffText } = await fetchPullRequestDiff(pullRequest, settings, progress, signal);
   signal?.throwIfAborted();
+  const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, settings, diffText, progress, signal);
+  signal?.throwIfAborted();
   const chunks = chunkDiff(diffText, settings.maxDiffCharsPerChunk);
 
   if (!chunks.length) {
@@ -134,6 +136,7 @@ async function reviewCurrentPullRequest(
         followUpFeedback: normalizedFeedback,
         previousFindings,
         visualEvidence,
+        fineDesignReference,
         signal
       })
     );
@@ -208,6 +211,8 @@ async function reviewFindingWithFeedback({
   const { pullRequestInfo, commits, changedFiles, diffText } = await fetchPullRequestDiff(pullRequest, settings, progress, signal);
   signal?.throwIfAborted();
   const relevantDiff = selectRelevantDiff(diffText, finding.filePath, finding.line, settings.maxDiffCharsPerChunk);
+  const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, settings, relevantDiff, progress, signal);
+  signal?.throwIfAborted();
 
   progress("AI 正在重新审查这条意见...");
   const reviewed = await reviewFindingFeedback({
@@ -222,6 +227,7 @@ async function reviewFindingWithFeedback({
     feedback: normalizedFeedback,
     feedbackRounds: finding.feedbackRounds,
     images: normalizedImages,
+    fineDesignReference,
     signal
   });
 

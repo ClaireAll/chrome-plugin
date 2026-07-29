@@ -49,6 +49,12 @@ const FINE_DESIGN_REVIEW_REPOS = new Set(["fx-data-web", "fine-design-biz"]);
 const COMPONENT_NAME_LIMIT = 12;
 const COMPONENT_FILE_LIMIT = 8;
 const COMPONENT_SOURCE_CHAR_LIMIT = 3000;
+const REVIEW_EVIDENCE_CHANGED_FILE_LIMIT = 10;
+const REVIEW_EVIDENCE_RELATED_FILE_LIMIT = 8;
+const REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT = 3600;
+const REVIEW_EVIDENCE_EXT_PATTERN = /\.(tsx|ts|jsx|js|vue|less|css)$/i;
+const REVIEW_EVIDENCE_TEST_FILE_PATTERN =
+  /(^|\/)(__tests__|__test__|tests?|specs?)(\/|$)|(^|\/)(test|spec)\.(tsx?|jsx?|vue)$|\.(test|spec)\.(tsx?|jsx?|vue)$/i;
 
 export async function fetchFineDesignComponentReferences(
   pullRequest,
@@ -99,6 +105,58 @@ export async function fetchFineDesignComponentReferences(
       error: error.message || String(error)
     };
   }
+}
+
+export async function fetchReviewEvidenceContext(
+  pullRequest,
+  pullRequestInfo,
+  changedFiles,
+  settings,
+  progress = () => {},
+  signal
+) {
+  const changedPaths = Array.from(new Set((changedFiles || []).map(normalizeChangePath).filter(isReviewEvidenceFile))).slice(
+    0,
+    REVIEW_EVIDENCE_CHANGED_FILE_LIMIT
+  );
+  if (!changedPaths.length) return { enabled: false, files: [], error: "" };
+
+  const headers = createBitbucketHeaders(settings);
+  const sourceRef = String(pullRequestInfo?.fromRef || "").trim();
+  const files = [];
+
+  progress("正在读取变更文件源码上下文...");
+  for (const path of changedPaths) {
+    signal?.throwIfAborted();
+    const source = await fetchPullRequestRepositoryFileText(pullRequest, headers, path, sourceRef, signal).catch(() => "");
+    if (source.trim()) {
+      files.push({
+        kind: "changed",
+        path,
+        source: trimReviewEvidenceSource(source)
+      });
+    }
+  }
+
+  try {
+    const relatedPaths = await findRelatedReviewEvidencePaths(pullRequest, headers, sourceRef, changedPaths, files, signal);
+    for (const path of relatedPaths) {
+      signal?.throwIfAborted();
+      const source = await fetchPullRequestRepositoryFileText(pullRequest, headers, path, sourceRef, signal).catch(() => "");
+      if (source.trim()) {
+        files.push({
+          kind: "related",
+          path,
+          source: trimReviewEvidenceSource(source)
+        });
+      }
+    }
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return { enabled: true, files, error: error.message || String(error) };
+  }
+
+  return { enabled: true, files, error: "" };
 }
 
 function createBitbucketHeaders(settings) {
@@ -224,10 +282,7 @@ function scoreComponentFile(component, path) {
 }
 
 async function fetchRepositoryFileText(origin, headers, path, signal) {
-  const encodedPath = String(path || "")
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
+  const encodedPath = encodeRepositoryPath(path);
   const response = await fetch(
     `${origin}/rest/api/latest/projects/${FINE_DESIGN_PROJECT_KEY}/repos/${FINE_DESIGN_REPO_SLUG}/browse/${encodedPath}?raw`,
     {
@@ -244,6 +299,168 @@ async function fetchRepositoryFileText(origin, headers, path, signal) {
   }
 
   return formatRepositoryFilePayload(await response.text(), response.headers.get("content-type") || "");
+}
+
+async function fetchPullRequestRepositoryFileText(pullRequest, headers, path, sourceRef, signal) {
+  const encodedProject = encodeURIComponent(pullRequest.projectKey);
+  const encodedRepo = encodeURIComponent(pullRequest.repoSlug);
+  const encodedPath = encodeRepositoryPath(path);
+  const refQuery = sourceRef ? `&at=${encodeURIComponent(sourceRef)}` : "";
+  const response = await fetch(
+    `${pullRequest.origin}/rest/api/latest/projects/${encodedProject}/repos/${encodedRepo}/browse/${encodedPath}?raw${refQuery}`,
+    {
+      signal,
+      headers: {
+        ...headers,
+        Accept: "text/plain, application/json, */*"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(await formatHttpError(`读取源码文件 ${path} 失败`, response));
+  }
+
+  return formatRepositoryFilePayload(await response.text(), response.headers.get("content-type") || "");
+}
+
+async function findRelatedReviewEvidencePaths(pullRequest, headers, sourceRef, changedPaths, changedSources, signal) {
+  const fileUrl = new URL(
+    `${pullRequest.origin}/rest/api/latest/projects/${encodeURIComponent(pullRequest.projectKey)}/repos/${encodeURIComponent(pullRequest.repoSlug)}/files`
+  );
+  fileUrl.searchParams.set("limit", "1000");
+  if (sourceRef) fileUrl.searchParams.set("at", sourceRef);
+
+  const repositoryFiles = (await fetchAllPages(fileUrl.toString(), headers, "读取仓库文件列表失败", signal))
+    .map(formatRepositoryFilePath)
+    .map(normalizeRepositoryPath)
+    .filter(isReviewEvidenceFile);
+  const repositoryFileSet = new Set(repositoryFiles);
+  const changedPathSet = new Set(changedPaths);
+  const related = [];
+
+  for (const path of changedPaths) {
+    addRelatedPathCandidates(related, repositoryFileSet, changedPathSet, getSiblingEvidenceCandidates(path));
+  }
+
+  for (const file of changedSources) {
+    const importCandidates = extractRelativeImportSpecifiers(file.source).flatMap((specifier) =>
+      resolveRelativeImportCandidates(file.path, specifier, repositoryFileSet)
+    );
+    addRelatedPathCandidates(related, repositoryFileSet, changedPathSet, importCandidates);
+  }
+
+  return related.slice(0, REVIEW_EVIDENCE_RELATED_FILE_LIMIT);
+}
+
+function addRelatedPathCandidates(target, repositoryFileSet, changedPathSet, candidates) {
+  for (const candidate of candidates) {
+    if (!repositoryFileSet.has(candidate) || changedPathSet.has(candidate) || target.includes(candidate)) continue;
+    target.push(candidate);
+    if (target.length >= REVIEW_EVIDENCE_RELATED_FILE_LIMIT) return;
+  }
+}
+
+function getSiblingEvidenceCandidates(path) {
+  const directory = getDirectoryName(path);
+  const baseName = getBaseNameWithoutExtension(path);
+  const prefix = directory ? `${directory}/` : "";
+  return [
+    `${prefix}${baseName}.types.ts`,
+    `${prefix}${baseName}.type.ts`,
+    `${prefix}types.ts`,
+    `${prefix}constants.ts`,
+    `${prefix}utils.ts`,
+    `${prefix}index.ts`,
+    `${prefix}index.tsx`
+  ];
+}
+
+function extractRelativeImportSpecifiers(source) {
+  const imports = new Set();
+  const pattern = /\b(?:import|export)\s+(?:[^'"]+\s+from\s+)?['"](\.{1,2}\/[^'"]+)['"]|require\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g;
+  let match = pattern.exec(String(source || ""));
+
+  while (match && imports.size < REVIEW_EVIDENCE_RELATED_FILE_LIMIT * 2) {
+    imports.add(match[1] || match[2]);
+    match = pattern.exec(String(source || ""));
+  }
+
+  return Array.from(imports);
+}
+
+function resolveRelativeImportCandidates(importerPath, specifier, repositoryFileSet) {
+  const importerDirectory = getDirectoryName(importerPath);
+  const basePath = normalizeRepositoryPath(`${importerDirectory ? `${importerDirectory}/` : ""}${specifier}`);
+  const directCandidates = [
+    basePath,
+    `${basePath}.ts`,
+    `${basePath}.tsx`,
+    `${basePath}.js`,
+    `${basePath}.jsx`,
+    `${basePath}.vue`,
+    `${basePath}/index.ts`,
+    `${basePath}/index.tsx`,
+    `${basePath}/index.js`,
+    `${basePath}/index.jsx`
+  ];
+
+  return directCandidates.filter((candidate) => repositoryFileSet.has(candidate));
+}
+
+function normalizeChangePath(value) {
+  return normalizeRepositoryPath(
+    String(value || "")
+      .replace(/\s+\([A-Z_]+\)$/i, "")
+      .replace(/^["']|["']$/g, "")
+  );
+}
+
+function normalizeRepositoryPath(path) {
+  const parts = [];
+  for (const part of String(path || "").replace(/\\/g, "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return parts.join("/");
+}
+
+function isReviewEvidenceFile(path) {
+  const value = normalizeRepositoryPath(path);
+  return (
+    REVIEW_EVIDENCE_EXT_PATTERN.test(value) &&
+    !/(^|\/)(dist|build|coverage|node_modules)(\/|$)/i.test(value) &&
+    !REVIEW_EVIDENCE_TEST_FILE_PATTERN.test(value)
+  );
+}
+
+function trimReviewEvidenceSource(source) {
+  const text = String(source || "").trim();
+  if (text.length <= REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT) return text;
+  return `${text.slice(0, REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT)}\n...`;
+}
+
+function getDirectoryName(path) {
+  const normalized = normalizeRepositoryPath(path);
+  const slashIndex = normalized.lastIndexOf("/");
+  return slashIndex > 0 ? normalized.slice(0, slashIndex) : "";
+}
+
+function getBaseNameWithoutExtension(path) {
+  const fileName = normalizeRepositoryPath(path).split("/").pop() || "";
+  return fileName.replace(/\.[^.]+$/, "");
+}
+
+function encodeRepositoryPath(path) {
+  return String(path || "")
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
 }
 
 function formatRepositoryFilePayload(rawPayload, contentType) {

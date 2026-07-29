@@ -215,6 +215,51 @@ input:focus-visible {
   margin-top: 12px;
 }
 
+.theme-color-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #18212F;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#ballThemeColor {
+  display: block;
+  width: 44px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  overflow: hidden;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#ballThemeColor::-webkit-color-swatch-wrapper {
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+}
+
+#ballThemeColor::-webkit-color-swatch {
+  border: 1px solid #94A3B8;
+  border-radius: inherit;
+}
+
+#ballThemeColor::-moz-color-swatch {
+  border: 1px solid #94A3B8;
+  border-radius: inherit;
+}
+
 .color-preset-item {
   position: relative;
   display: block;
@@ -223,14 +268,18 @@ input:focus-visible {
 }
 
 .color-swatch {
+  display: block;
   width: 28px;
   height: 28px;
   min-width: 28px;
-  border: 1px solid #94A3B8;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
   padding: 0;
   overflow: hidden;
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .color-swatch:focus-visible {
@@ -240,11 +289,18 @@ input:focus-visible {
 
 .color-swatch::-webkit-color-swatch-wrapper {
   padding: 0;
+  border: 0;
+  border-radius: inherit;
 }
 
 .color-swatch::-webkit-color-swatch {
-  border: 0;
-  border-radius: 5px;
+  border: 1px solid #94A3B8;
+  border-radius: inherit;
+}
+
+.color-swatch::-moz-color-swatch {
+  border: 1px solid #94A3B8;
+  border-radius: inherit;
 }
 
 .color-preset-delete {

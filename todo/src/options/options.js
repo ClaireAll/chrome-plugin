@@ -8,6 +8,7 @@ import {
 
 const elements = {
   addColorPreset: document.getElementById("addColorPreset"),
+  ballThemeColor: document.getElementById("ballThemeColor"),
   colorPresetList: document.getElementById("colorPresetList"),
   completedFileStatus: document.getElementById("completedFileStatus"),
   completedList: document.getElementById("completedList"),
@@ -21,7 +22,7 @@ const elements = {
 let completedData = { completed: [] };
 let completedStatus = null;
 let completedMutationBusy = false;
-let settings = { colorPresets: [] };
+let settings = { ballThemeColor: "#2563eb", colorPresets: [] };
 let chart = null;
 
 function sendMessage(type, payload = {}) {
@@ -99,11 +100,23 @@ function renderColorPresets() {
   }
 }
 
+function renderBallThemeColor() {
+  elements.ballThemeColor.value = normalizePickerColor(settings.ballThemeColor || "#2563eb");
+}
+
 async function updateColorPresets(colorPresets) {
   const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { colorPresets });
   if (!result.ok) return;
   settings = result.settings || { ...settings, colorPresets };
   renderColorPresets();
+}
+
+async function updateBallThemeColor(color) {
+  const ballThemeColor = normalizePickerColor(color);
+  const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { ballThemeColor });
+  if (!result.ok) return;
+  settings = result.settings || { ...settings, ballThemeColor };
+  renderBallThemeColor();
 }
 
 function applyColorPreset(color, nextColor) {
@@ -196,6 +209,7 @@ async function refreshState() {
     settings = state.settings;
     applyCompletedStatus(state.completedStatus);
   }
+  renderBallThemeColor();
   renderColorPresets();
   await refreshCompletedData();
 }
@@ -247,6 +261,9 @@ elements.requestCompletedPermission.addEventListener("click", async () => {
 });
 elements.addColorPreset.addEventListener("click", () => {
   updateColorPresets([...(settings.colorPresets || []), randomColorPreset()]);
+});
+elements.ballThemeColor.addEventListener("change", () => {
+  updateBallThemeColor(elements.ballThemeColor.value);
 });
 globalThis.addEventListener("resize", () => chart?.resize());
 

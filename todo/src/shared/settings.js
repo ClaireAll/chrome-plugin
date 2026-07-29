@@ -1,7 +1,10 @@
 import { DEFAULT_COLOR_PRESETS } from "./domain.js";
 
+const DEFAULT_BALL_THEME_COLOR = "#2563eb";
+
 export const DEFAULT_SETTINGS = {
   ballPosition: null,
+  ballThemeColor: DEFAULT_BALL_THEME_COLOR,
   colorPresets: DEFAULT_COLOR_PRESETS,
   defaultColor: "#ffffff"
 };
@@ -9,16 +12,18 @@ export const DEFAULT_SETTINGS = {
 export function sanitizeSettings(input) {
   const source = input && typeof input === "object" ? input : {};
   const colorPresets = sanitizeColorPresets(source.colorPresets);
-  const defaultColor = colorPresets.includes(source.defaultColor) ? source.defaultColor : colorPresets[0];
+  const requestedDefaultColor = normalizeHexColor(source.defaultColor);
+  const defaultColor = colorPresets.includes(requestedDefaultColor) ? requestedDefaultColor : colorPresets[0];
   return {
     ballPosition: sanitizeBallPosition(source.ballPosition),
+    ballThemeColor: normalizeHexColor(source.ballThemeColor) || DEFAULT_BALL_THEME_COLOR,
     colorPresets,
     defaultColor
   };
 }
 
 export function sanitizeColorPresets(value) {
-  const colors = Array.isArray(value) ? value.filter(isHexColor) : DEFAULT_COLOR_PRESETS;
+  const colors = Array.isArray(value) ? value.map(normalizeHexColor).filter(Boolean) : DEFAULT_COLOR_PRESETS;
   return colors.length ? [...new Set(colors)] : DEFAULT_COLOR_PRESETS;
 }
 
@@ -53,6 +58,10 @@ function ratioToSide(value) {
 function clampRatio(value) {
   if (!Number.isFinite(value)) return 0;
   return Math.min(Math.max(value, 0), 1);
+}
+
+function normalizeHexColor(value) {
+  return isHexColor(value) ? value.toLowerCase() : "";
 }
 
 function isHexColor(value) {

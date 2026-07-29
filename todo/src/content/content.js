@@ -75,7 +75,7 @@
   });
   const state = {
     items: [],
-    settings: { colorPresets: DEFAULT_COLORS },
+    settings: { ballThemeColor: "#2563eb", colorPresets: DEFAULT_COLORS },
     isOpen: false,
     activeColorId: "",
     activeReminderId: "",
@@ -190,6 +190,7 @@
     }
     state.items = reconcilePendingReorders(Array.isArray(response.items) ? response.items : []);
     state.settings = response.settings || state.settings;
+    applyBallThemeColor(state.settings.ballThemeColor);
     const correctedPosition = applyBallPosition(state.settings.ballPosition);
     if (correctedPosition?.corrected) persistBallPosition(correctedPosition.position);
     render();
@@ -453,6 +454,10 @@
 
   function clearTodoDragMarkers() {
     for (const item of list.querySelectorAll?.(".todo-drag-over") || []) item.classList.remove("todo-drag-over");
+  }
+
+  function applyBallThemeColor(color) {
+    root.style.setProperty("--todo-ball-theme", normalizeHexColor(color) || "#2563eb");
   }
 
   async function persistReorder() {
@@ -738,5 +743,9 @@
 
   function escapeAttribute(value) {
     return escapeHtml(value);
+  }
+
+  function normalizeHexColor(value) {
+    return /^#[0-9a-fA-F]{6}$/.test(value || "") ? value.toLowerCase() : "";
   }
 })();

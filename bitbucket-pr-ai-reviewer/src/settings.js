@@ -4,6 +4,8 @@ export const DEFAULT_REVIEW_RULES = `Focus on actionable code review findings.
 Prioritize correctness bugs, behavioral regressions, missing tests for changed behavior, security risks, data loss risks, and performance problems.
 For frontend files such as JS, TS, TSX, Vue, CSS, and Less, also check state handling, rendering edge cases, accessibility, memoization, API contracts, and user-visible styling regressions.
 Avoid style-only nitpicks unless they affect maintainability or product behavior.
+Skip test-file diffs such as test.ts, *.test.ts, *.spec.ts, and files under test/tests/__tests__; do not produce findings for those files.
+Do not report speculative findings based only on "may", "might", or "could". Each finding must explain the evidence from the current diff, such as the changed condition branch, data flow, call chain, API contract, state transition, or rendered result that creates a concrete failing path. If the evidence is insufficient, return no finding.
 Return concrete file paths, line numbers when clear from the diff, and suggested fixes.
 Except for code snippets, file paths, identifiers, API names, component names, library names, command names, and other proper nouns, write all review text in UTF-8 Simplified Chinese.`;
 

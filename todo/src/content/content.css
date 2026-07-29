@@ -2,6 +2,7 @@
   --todo-ink: #18212f;
   --todo-surface: #ffffff;
   --todo-cobalt: #2563eb;
+  --todo-ball-theme: #2563eb;
   --todo-teal: #0f766e;
   --todo-coral: #e76f51;
   --todo-slate: #64748b;
@@ -39,7 +40,7 @@
   border-radius: 999px;
   background:
     radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.16) 30%, transparent 31%),
-    linear-gradient(145deg, color-mix(in srgb, var(--todo-cobalt) 68%, #ffffff 16%), #8b5cf6);
+    linear-gradient(145deg, color-mix(in srgb, var(--todo-ball-theme) 76%, #ffffff 18%), color-mix(in srgb, var(--todo-ball-theme) 72%, #8b5cf6 28%));
   color: #fff;
   cursor: grab;
   opacity: var(--todo-ball-opacity);

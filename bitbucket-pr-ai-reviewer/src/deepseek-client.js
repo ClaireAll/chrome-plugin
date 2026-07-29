@@ -1,4 +1,5 @@
 import {
+  buildFindingsVerificationPrompt,
   buildFindingFeedbackPrompt,
   buildReviewPrompt,
   buildVisualEvidencePrompt,
@@ -21,7 +22,9 @@ export async function reviewDiffChunk({
   diffChunk,
   chunkIndex,
   totalChunks,
+  evidenceContext,
   followUpFeedback = "",
+  followUpFeedbackContext = [],
   previousFindings = [],
   visualEvidence = "",
   fineDesignReference,
@@ -36,17 +39,47 @@ export async function reviewDiffChunk({
     chunkIndex,
     totalChunks,
     reviewRules: settings.reviewRules,
+    evidenceContext,
     followUpFeedback,
+    followUpFeedbackContext,
     previousFindings,
     visualEvidence,
     fineDesignReference
   });
 
-  const { value: findings, rawText } = await requestStructuredCompletion(settings, prompt, parseReviewResponse, { signal });
+  const { value: candidateFindings, rawText } = await requestStructuredCompletion(settings, prompt, parseReviewResponse, { signal });
+  if (!candidateFindings.length) {
+    return {
+      findings: [],
+      rawText
+    };
+  }
+
+  let verifiedFindings = candidateFindings;
+  let verificationRawText = "";
+  try {
+    const verificationPrompt = buildFindingsVerificationPrompt({
+      pullRequest,
+      pullRequestInfo,
+      commits,
+      changedFiles,
+      diffChunk,
+      reviewRules: settings.reviewRules,
+      evidenceContext,
+      findings: candidateFindings,
+      fineDesignReference
+    });
+    const verified = await requestStructuredCompletion(settings, verificationPrompt, parseReviewResponse, { signal });
+    verifiedFindings = verified.value;
+    verificationRawText = verified.rawText;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    verificationRawText = `verification skipped: ${error.message || String(error)}`;
+  }
 
   return {
-    findings,
-    rawText
+    findings: verifiedFindings,
+    rawText: `${rawText}\n\n[verification]\n${verificationRawText}`
   };
 }
 
@@ -62,6 +95,7 @@ export async function reviewFindingFeedback({
   feedback,
   feedbackRounds,
   images = [],
+  evidenceContext,
   fineDesignReference,
   signal
 }) {
@@ -76,6 +110,7 @@ export async function reviewFindingFeedback({
     feedback,
     feedbackRounds,
     reviewRules: settings.reviewRules,
+    evidenceContext,
     fineDesignReference
   });
 

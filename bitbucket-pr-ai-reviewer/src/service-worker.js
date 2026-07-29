@@ -1,4 +1,4 @@
-import { fetchFineDesignComponentReferences, fetchPullRequestDiff } from "./bitbucket-client.js";
+import { fetchFineDesignComponentReferences, fetchPullRequestDiff, fetchReviewEvidenceContext } from "./bitbucket-client.js";
 import { extractVisualEvidence, reviewDiffChunk, reviewFindingFeedback } from "./deepseek-client.js";
 import "./image-attachments.js";
 import { chunkDiff, mergeFindings } from "./review-engine.js";
@@ -58,6 +58,7 @@ async function handleMessage(message, sender) {
           baseReviewId: message.baseReviewId,
           requestId: message.requestId,
           images: message.images,
+          feedbackContext: message.feedbackContext,
           signal
         }))
       }), { url: message.url || sender.tab?.url, tabId: sender.tab?.id, kind: "review" });
@@ -84,12 +85,13 @@ async function handleMessage(message, sender) {
 async function reviewCurrentPullRequest(
   url,
   tabId,
-  { feedback = "", baseReviewId = "", requestId = "", images = [], signal } = {}
+  { feedback = "", baseReviewId = "", requestId = "", images = [], feedbackContext = [], signal } = {}
 ) {
   const settings = validateSettings(await loadSettings());
   const pullRequest = parsePullRequestUrl(url);
   const progress = (status) => notifyProgress(tabId, status, { requestId, url });
   const normalizedFeedback = normalizeFeedback(feedback);
+  const normalizedFeedbackContext = normalizeFeedbackContext(feedbackContext);
   const normalizedImages = ImageAttachments.normalizeImagePayloads(images);
   if (normalizedImages.length && !normalizedFeedback) {
     throw new Error("请先填写希望 AI 补充审查的内容。");
@@ -100,13 +102,38 @@ async function reviewCurrentPullRequest(
   progress(normalizedFeedback ? "正在根据补充反馈重新读取合并请求..." : "正在读取合并请求元数据...");
   const { pullRequestInfo, commits, changedFiles, diffText } = await fetchPullRequestDiff(pullRequest, settings, progress, signal);
   signal?.throwIfAborted();
-  const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, settings, diffText, progress, signal);
-  signal?.throwIfAborted();
   const chunks = chunkDiff(diffText, settings.maxDiffCharsPerChunk);
 
   if (!chunks.length) {
-    throw new Error("没有生成可评审的 diff 片段。");
+    progress("本次 PR 只有测试文件改动，已跳过代码审查。");
+    const result = {
+      pullRequest,
+      pullRequestInfo,
+      commits,
+      changedFiles,
+      chunksReviewed: 0,
+      findings: [],
+      ...(normalizedFeedback
+        ? {
+            followUpReview: {
+              baseReviewId: baseRecord?.id || "",
+              feedback: normalizedFeedback
+            }
+          }
+        : {})
+    };
+    const history = await saveReviewHistory(url, result, { preserveReviewId: baseRecord?.id || "" });
+    return {
+      result,
+      history
+    };
   }
+
+  const reviewDiffText = chunks.join("\n\n");
+  const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, settings, reviewDiffText, progress, signal);
+  signal?.throwIfAborted();
+  const reviewEvidenceContext = await fetchReviewEvidenceContext(pullRequest, pullRequestInfo, changedFiles, settings, progress, signal);
+  signal?.throwIfAborted();
 
   let visualEvidence = "";
   if (normalizedImages.length) {
@@ -133,7 +160,9 @@ async function reviewCurrentPullRequest(
         diffChunk: chunks[index],
         chunkIndex: index,
         totalChunks: chunks.length,
+        evidenceContext: reviewEvidenceContext,
         followUpFeedback: normalizedFeedback,
+        followUpFeedbackContext: normalizedFeedbackContext,
         previousFindings,
         visualEvidence,
         fineDesignReference,
@@ -211,6 +240,8 @@ async function reviewFindingWithFeedback({
   const { pullRequestInfo, commits, changedFiles, diffText } = await fetchPullRequestDiff(pullRequest, settings, progress, signal);
   signal?.throwIfAborted();
   const relevantDiff = selectRelevantDiff(diffText, finding.filePath, finding.line, settings.maxDiffCharsPerChunk);
+  const reviewEvidenceContext = await fetchReviewEvidenceContext(pullRequest, pullRequestInfo, [finding.filePath], settings, progress, signal);
+  signal?.throwIfAborted();
   const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, settings, relevantDiff, progress, signal);
   signal?.throwIfAborted();
 
@@ -227,6 +258,7 @@ async function reviewFindingWithFeedback({
     feedback: normalizedFeedback,
     feedbackRounds: finding.feedbackRounds,
     images: normalizedImages,
+    evidenceContext: reviewEvidenceContext,
     fineDesignReference,
     signal
   });
@@ -488,6 +520,18 @@ function normalizeFeedback(value, required = false) {
   }
 
   return feedback;
+}
+
+function normalizeFeedbackContext(value) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((round) => ({
+      feedback: String(round?.feedback || "").trim().slice(0, 1200),
+      response: String(round?.response || "").trim().slice(0, 1200)
+    }))
+    .filter((round) => round.feedback || round.response)
+    .slice(-6);
 }
 
 function normalizeCategory(value) {

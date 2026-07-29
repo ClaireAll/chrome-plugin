@@ -19,6 +19,8 @@
 - 如果 diff 中能判断行号，请给出行号；无法判断则使用 null。
 - 除代码片段、文件路径、变量名、函数名、API 名、组件名、库名、命令名、专有名词外，`title`、`detail`、`suggestion` 等审查说明统一使用 UTF-8 简体中文输出。
 - 用中文说明为什么这是问题，以及具体怎么修。
+- 不审查测试文件自身的 diff，例如 `test.ts`、`*.test.ts`、`*.spec.ts`，以及 `test`、`tests`、`__tests__` 目录下的文件；不要为这些文件输出 finding。
+- 减少“可能导致”“可能存在”这类猜测型结论；每条问题必须给出由当前 diff 推导出的依据，例如变更后的条件分支、数据流、调用链、接口契约或状态流转如何触发具体逻辑错误。证据不足时不要输出。
 - 如果没有发现问题，返回空 findings。
 ```
 
@@ -38,6 +40,7 @@
 不要输出：
 - 只关于代码风格、空行、import 排序的建议。
 - 没有明确风险的“可以考虑”类建议。
+- 测试文件自身改动的审查意见，例如 `test.ts`、`*.test.ts`、`*.spec.ts` 或 `__tests__` 下的文件。
 ```
 
 ## 业务逻辑规则模板
@@ -78,6 +81,12 @@
 2. 不要把 React、TypeScript、FineUI、FineDesign、DeepSeek、Bitbucket、@jsy/core、@fx-ui/fine-design、useEffect、PageProvider、FINEUI_TO_FD_KEY 等专有名词硬翻译成中文。
 3. JSON 字段名保持英文，例如 severity、filePath、line、title、detail、suggestion；字段值里的说明文字按上面的中文规则输出。
 
+证据要求：
+1. 减少“可能导致”“可能存在”“建议确认”这类猜测型 review；只有能从当前 diff、PR 标题/描述、commit message、组件源码或已有上下文推导出具体失败路径时才输出。
+2. 每条问题的 detail 必须说明触发条件和逻辑依据，例如哪段改动改变了条件分支、数据结构、调用链、接口契约、状态流转或渲染结果，以及为什么会产生实际错误。
+3. 如果只是缺少上下文、不了解项目约定或无法证明会出错，不要输出 finding；可以保持空 findings。
+4. 不审查测试文件自身的 diff，例如 `test.ts`、`*.test.ts`、`*.spec.ts`，以及 `test`、`tests`、`__tests__` 目录下的文件；不要为这些文件输出 finding。
+
 变更安全：
 1. 检查改动是否保持最小范围，是否顺手重构、顺手清理、修改了与需求无关的文件或逻辑。
 2. 修改 @jsy/core、共享服务、共享类型、工具函数、公共组件时，必须指出可能受影响的消费方或缺失的兼容性检查。
@@ -97,6 +106,9 @@ import、模块初始化和包入口：
 4. 不要在 jsy-web-react/src/main.ts、jsy-core/lib/index.ts 或业务桶里新增会拉起重模块的 barrel re-export。
 5. jsy-core 包内避免 from '../crud'、from '../service' 等桶路径，优先改成具体子路径。
 6. 纯函数文件（校验、格式化等）顶层不应 import conf.crud、整棵 router 或重业务模块。
+7. 不要审查 `BI.i18nText` 的缺少 `BI` 对象导入问题；它是翻译函数，不参与业务逻辑，不要仅因此报错。
+8. 需要审查除 `BI.i18nText` 外的 `BI.xxx` 通用工具方法使用；如果存在 lodash 中明确对应的方法，建议改用 lodash 对应方法，不要再新增 `BI.xxx` 工具方法调用。
+9. 不要提出“使用 Tailwind 类名可能无效”这类审查；本工程 Tailwind 类名默认有效。除非 diff 中能明确证明样式冲突、布局异常或类名拼接逻辑错误，否则不要质疑 Tailwind 类名有效性。
 
 Provider 和轻量入口：
 1. 登录、邀请、错误页等轻量页应使用 LoginPageProvider，或仅使用 ConfigProvider + locale。
@@ -130,9 +142,10 @@ FineUI 到 FineDesign / React 迁移：
 
 测试、验证和命令：
 1. 涉及行为变化、接口契约、状态流转、权限、迁移开关、核心工具函数时，应检查是否有 Vitest 单测或明确回归验证。
-2. 代码质量命令应优先使用 package.json 中已有 pnpm scripts，不要手动拼临时命令。
-3. ESLint 检查尽量使用 pnpm eslint:files <path> 指定文件，避免不必要的全仓检查。
-4. Less 改动应考虑 stylelint；格式化遵循 Prettier：160 字符宽度、单引号、trailingComma: all。
+2. 可以判断业务改动是否缺少测试覆盖，但不要审查测试文件自身的实现改动。
+3. 代码质量命令应优先使用 package.json 中已有 pnpm scripts，不要手动拼临时命令。
+4. ESLint 检查尽量使用 pnpm eslint:files <path> 指定文件，避免不必要的全仓检查。
+5. Less 改动应考虑 stylelint；格式化遵循 Prettier：160 字符宽度、单引号、trailingComma: all。
 
 安全和本地调试：
 1. 不得提交真实 token、Cookie、fine_auth_token、DEV_SID、.env.local 或任何含真实账号信息的配置。
@@ -147,7 +160,7 @@ FineUI 到 FineDesign / React 迁移：
 ```js
 reviewRules: `请以资深代码审查者的角度审查当前 Pull Request diff。
 优先发现 correctness bug、业务回归、安全风险、缺少测试的问题。
-不要提出纯格式化建议。`
+不要提出纯格式化建议。`;
 ```
 
 注意：如果你已经在 Chrome Options 页保存过规则，Options 页保存的值会覆盖代码里的默认值。需要重新使用代码默认值时，可以在 Options 页点 `Reset defaults`。

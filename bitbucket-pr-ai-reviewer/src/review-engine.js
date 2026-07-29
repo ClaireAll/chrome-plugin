@@ -1,6 +1,8 @@
 import { DEFAULT_REVIEW_RULES } from "./settings.js";
 
 const ALLOWED_SEVERITIES = new Set(["urgent", "suggestion"]);
+const TEST_REVIEW_FILE_PATTERN =
+  /(^|\/)(__tests__|__test__|tests?|specs?)(\/|$)|(^|\/)(test|spec)\.(tsx?|jsx?|vue)$|\.(test|spec)\.(tsx?|jsx?|vue)$/i;
 
 export const REVIEW_RESPONSE_SCHEMA = {
   type: "object",
@@ -45,7 +47,7 @@ export function chunkDiff(diff, maxChars = 12000) {
 
   if (!text) return [];
 
-  const sections = text.split(/\n(?=diff --git )/g);
+  const sections = text.split(/\n(?=diff --git )/g).filter(isReviewableDiffSection);
   const chunks = [];
   let current = "";
 
@@ -85,15 +87,19 @@ export function buildReviewPrompt({
   chunkIndex,
   totalChunks,
   reviewRules,
+  evidenceContext,
   followUpFeedback = "",
+  followUpFeedbackContext = [],
   previousFindings = [],
   visualEvidence = "",
   fineDesignReference
 }) {
-  const files = (changedFiles || []).map(formatChangedFile).join("\n") || "No changed file list was available.";
+  const files = formatChangedFilesForPrompt(changedFiles);
   const commitMessages = formatCommits(commits);
   const rules = String(reviewRules || DEFAULT_REVIEW_RULES).trim();
   const followUpContext = formatFollowUpContext(followUpFeedback, previousFindings);
+  const feedbackConversationContext = formatFeedbackConversationContext(followUpFeedbackContext);
+  const reviewEvidenceContext = formatReviewEvidenceContext(evidenceContext, diffChunk);
   const visualEvidenceContext = formatVisualEvidenceContext(visualEvidence);
   const fineDesignReferenceContext = formatFineDesignReferenceContext(fineDesignReference);
 
@@ -122,20 +128,90 @@ export function buildReviewPrompt({
       "Review focus:",
       "先根据 PR 标题、描述和 commit message 判断这次提交想解决什么，再审查 diff 是否真正满足这个目的。",
       "尤其关注逻辑问题、行为回归、边界条件、接口契约不一致、状态流转错误、权限范围变化和缺少必要测试。",
-      "如果代码实现与提交目的不一致，或者可能引入新逻辑问题，请优先作为 urgent 输出。",
+      "不要审查 test.ts、*.test.ts、*.spec.ts 或 test/tests/__tests__ 目录下的测试文件改动，也不要为这些文件输出 finding。",
+      "如果代码实现与提交目的不一致，或者 diff 中能推导出明确的新逻辑错误，请优先作为 urgent 输出。",
+      "减少“可能导致”“可能存在”这类猜测型 finding；每条 finding 必须说明由当前 diff 改动导致的触发条件、数据流、调用链、接口契约或状态流转依据。证据不足时返回空 findings。",
       "",
       "Changed files:",
       files,
       "",
       "Review rules:",
       rules,
+      reviewEvidenceContext,
       fineDesignReferenceContext,
       followUpContext,
+      feedbackConversationContext,
       visualEvidenceContext,
       "",
       "Return JSON exactly in this shape:",
       '{"findings":[{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"why this matters","suggestion":"specific fix"}]}',
       "Use null for line when the line is unclear. Use an empty findings array when no issues are found.",
+      "Output language rule: except code snippets, file paths, identifiers, API names, component names, library names, command names, and other proper nouns, write title, detail, and suggestion in UTF-8 Simplified Chinese.",
+      "",
+      "Diff chunk:",
+      "```diff",
+      diffChunk,
+      "```"
+    ].join("\n")
+  };
+}
+
+export function buildFindingsVerificationPrompt({
+  pullRequest,
+  pullRequestInfo,
+  commits,
+  changedFiles,
+  diffChunk,
+  reviewRules,
+  evidenceContext,
+  findings,
+  fineDesignReference
+}) {
+  const files = formatChangedFilesForPrompt(changedFiles);
+  const commitMessages = formatCommits(commits);
+  const rules = String(reviewRules || DEFAULT_REVIEW_RULES).trim();
+  const reviewEvidenceContext = formatReviewEvidenceContext(evidenceContext, diffChunk, findings);
+  const fineDesignReferenceContext = formatFineDesignReferenceContext(fineDesignReference);
+
+  return {
+    system: [
+      "You are a senior code reviewer validating candidate findings.",
+      "Use the supplied diff and source context to remove speculative or unsupported findings.",
+      "Return only valid JSON matching the requested schema."
+    ].join(" "),
+    user: [
+      `Pull request: ${pullRequest.projectKey}/${pullRequest.repoSlug}#${pullRequest.pullRequestId}`,
+      "",
+      "Pull request context:",
+      `PR title: ${pullRequestInfo?.title || "Unknown"}`,
+      `PR description: ${pullRequestInfo?.description || "No description"}`,
+      `Source branch: ${pullRequestInfo?.fromRef || "Unknown"}`,
+      `Target branch: ${pullRequestInfo?.toRef || "Unknown"}`,
+      "",
+      "Commit messages:",
+      commitMessages,
+      "",
+      "Changed files:",
+      files,
+      "",
+      "Review rules:",
+      rules,
+      reviewEvidenceContext,
+      fineDesignReferenceContext,
+      "",
+      "Candidate findings from the first pass:",
+      JSON.stringify(findings || [], null, 2),
+      "",
+      "Verification rules:",
+      "- Keep a finding only when the diff and context prove a concrete failing path.",
+      "- Drop findings against test files such as test.ts, *.test.ts, *.spec.ts, and files under test/tests/__tests__.",
+      "- Revise title/detail/suggestion when needed so the detail cites the changed branch, data flow, call chain, API contract, state transition, or rendered result that proves the issue.",
+      "- Drop findings based only on possibility, missing project context, or generic best-practice preference.",
+      "- Preserve filePath and line only when they are supported by the diff/context.",
+      "",
+      "Return JSON exactly in this shape:",
+      '{"findings":[{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"evidence-backed reason","suggestion":"specific fix"}]}',
+      "Use an empty findings array when no candidate is sufficiently supported.",
       "Output language rule: except code snippets, file paths, identifiers, API names, component names, library names, command names, and other proper nouns, write title, detail, and suggestion in UTF-8 Simplified Chinese.",
       "",
       "Diff chunk:",
@@ -179,12 +255,14 @@ export function buildFindingFeedbackPrompt({
   feedback,
   feedbackRounds = [],
   reviewRules,
+  evidenceContext,
   fineDesignReference
 }) {
-  const files = (changedFiles || []).map(formatChangedFile).join("\n") || "No changed file list was available.";
+  const files = formatChangedFilesForPrompt(changedFiles);
   const commitMessages = formatCommits(commits);
   const rules = String(reviewRules || DEFAULT_REVIEW_RULES).trim();
   const priorRounds = formatFeedbackRounds(feedbackRounds);
+  const reviewEvidenceContext = formatReviewEvidenceContext(evidenceContext, diffText, [finding]);
   const fineDesignReferenceContext = formatFineDesignReferenceContext(fineDesignReference);
 
   return {
@@ -214,11 +292,14 @@ export function buildFindingFeedbackPrompt({
       "",
       "Review rules:",
       rules,
+      reviewEvidenceContext,
       fineDesignReferenceContext,
       "",
       "Previous finding:",
       JSON.stringify(stripFindingMetadata(finding), null, 2),
       priorRounds,
+      "",
+      "Re-evaluation rule: confirm or revise the finding only when the supplied diff and context prove a concrete failing path. If the issue is only speculative, dismiss it.",
       "",
       `User feedback category: ${String(category || "未分类")}`,
       "User feedback:",
@@ -383,18 +464,34 @@ function chunkByLines(text, size) {
   return chunks;
 }
 
+function formatChangedFilesForPrompt(changedFiles) {
+  const files = (changedFiles || []).filter(isReviewableChangedFile).map(formatChangedFile).join("\n");
+  return files || "No non-test changed file list was available.";
+}
+
+function isReviewableChangedFile(file) {
+  const path = getChangedFilePath(file);
+  return path ? !isSkippedReviewFile(path) : true;
+}
+
 function formatChangedFile(file) {
   if (typeof file === "string") return `- ${file}`;
 
+  const path = getChangedFilePath(file) || "unknown";
+  const type = file?.type ? ` (${file.type})` : "";
+  return `- ${path}${type}`;
+}
+
+function getChangedFilePath(file) {
+  if (typeof file === "string") return file;
   const path =
     file?.path?.toString ||
     file?.path ||
     file?.srcPath?.toString ||
     file?.srcPath ||
     file?.displayId ||
-    "unknown";
-  const type = file?.type ? ` (${file.type})` : "";
-  return `- ${path}${type}`;
+    "";
+  return typeof path === "function" ? path.call(file.path || file.srcPath || file) : String(path || "");
 }
 
 function formatCommits(commits) {
@@ -428,6 +525,101 @@ function formatFollowUpContext(feedback, findings) {
     "Previous findings (context only, not authoritative):",
     JSON.stringify(previous, null, 2)
   ].join("\n");
+}
+
+function formatFeedbackConversationContext(rounds) {
+  const previous = (Array.isArray(rounds) ? rounds : [])
+    .map((round) => ({
+      userFeedback: String(round?.feedback || "").trim(),
+      aiResponseSummary: String(round?.response || "").trim()
+    }))
+    .filter((round) => round.userFeedback || round.aiResponseSummary)
+    .slice(-6);
+  if (!previous.length) return "";
+
+  return [
+    "",
+    "Temporary feedback conversation context:",
+    "Use these recent rounds only to understand the user's follow-up intent in this browser session. They are not persistent project facts.",
+    JSON.stringify(previous, null, 2)
+  ].join("\n");
+}
+
+function formatReviewEvidenceContext(context, diffText, findings = []) {
+  if (!context?.enabled) return "";
+
+  const selectedFiles = selectReviewEvidenceFiles(context.files, diffText, findings);
+  if (!selectedFiles.length && !context.error) return "";
+
+  const lines = [
+    "",
+    "Additional source context fetched from Bitbucket:",
+    "Use this context to verify data flow, imports, and component usage. Do not report issues that the context disproves."
+  ];
+
+  if (context.error) {
+    lines.push(`Context fetch warning: ${context.error}`);
+  }
+
+  for (const file of selectedFiles) {
+    lines.push(
+      `File: ${file.path || "unknown"} (${file.kind || "context"})`,
+      "```",
+      String(file.source || "").trim(),
+      "```"
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function selectReviewEvidenceFiles(files, diffText, findings) {
+  const allFiles = Array.isArray(files) ? files.filter((file) => file?.path && file?.source) : [];
+  if (!allFiles.length) return [];
+
+  const targetPaths = new Set([
+    ...extractDiffFilePaths(diffText),
+    ...(Array.isArray(findings) ? findings.map((finding) => normalizeEvidencePath(finding?.filePath)) : [])
+  ].filter(Boolean));
+
+  const changedFiles = allFiles.filter((file) => file.kind === "changed" && (!targetPaths.size || targetPaths.has(normalizeEvidencePath(file.path))));
+  const relatedFiles = allFiles.filter((file) => file.kind !== "changed");
+  const selected = [...changedFiles, ...relatedFiles].slice(0, 8);
+  return selected.length ? selected : allFiles.slice(0, 8);
+}
+
+function extractDiffFilePaths(diffText) {
+  const paths = new Set();
+  const pattern = /^diff --git a\/(.+?) b\/(.+)$/gm;
+  let match = pattern.exec(String(diffText || ""));
+
+  while (match) {
+    paths.add(normalizeEvidencePath(match[1]));
+    paths.add(normalizeEvidencePath(match[2]));
+    match = pattern.exec(String(diffText || ""));
+  }
+
+  return Array.from(paths);
+}
+
+function isReviewableDiffSection(section) {
+  const paths = extractDiffFilePaths(section);
+  return !paths.length || paths.some((path) => !isSkippedReviewFile(path));
+}
+
+function isSkippedReviewFile(path) {
+  return TEST_REVIEW_FILE_PATTERN.test(normalizeEvidencePath(path));
+}
+
+function normalizeEvidencePath(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/^a\//, "")
+    .replace(/^b\//, "")
+    .replace(/\s+\([A-Z_]+\)$/i, "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
 }
 
 function formatVisualEvidenceContext(value) {

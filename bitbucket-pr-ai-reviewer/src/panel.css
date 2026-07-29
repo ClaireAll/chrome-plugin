@@ -2017,6 +2017,58 @@
   white-space: nowrap;
 }
 
+.bbai-finding-file-link {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 5px;
+  max-width: 100%;
+  padding: 0;
+  text-align: left;
+  text-decoration: none;
+}
+
+.bbai-finding-file-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bbai-finding-file-link svg {
+  flex: 0 0 auto;
+  height: 13px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 13px;
+}
+
+.bbai-finding-file-link:hover {
+  color: #326fc8;
+  text-decoration: underline;
+}
+
+.bbai-jump-highlight {
+  animation: bbai-jump-highlight 1800ms ease-out;
+  outline: 2px solid rgba(50, 111, 200, 0.62);
+  outline-offset: 2px;
+}
+
+@keyframes bbai-jump-highlight {
+  0% {
+    background: rgba(50, 111, 200, 0.2);
+  }
+
+  100% {
+    background: transparent;
+  }
+}
+
 .bbai-detail-empty {
   align-items: center;
   color: rgba(42, 73, 104, 0.62);

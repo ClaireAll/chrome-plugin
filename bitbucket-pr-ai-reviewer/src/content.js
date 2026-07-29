@@ -31,6 +31,7 @@
     overallFeedbackOpen: false,
     overallFeedbackDraft: "",
     overallFeedbackImages: [],
+    overallFeedbackConversation: [],
     imageProcessingKind: "",
     imageSessionVersion: 0,
     activeRequestId: "",
@@ -40,7 +41,8 @@
     settings: null,
     settingsBusy: false,
     settingsMessage: "",
-    settingsError: false
+    settingsError: false,
+    detailScrollTop: 0
   };
 
   const root = document.createElement("aside");
@@ -50,6 +52,8 @@
   const ballRoot = document.createElement("aside");
   ballRoot.className = "bbai-panel bbai-panel--closed";
   document.documentElement.appendChild(ballRoot);
+
+  let ignoreNextHashOnlyLocationChange = false;
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === "toggle-panel") {
@@ -84,7 +88,6 @@
   });
 
   installLocationChangeWatcher();
-  installOutsideCloseHandler();
   window.addEventListener("pagehide", () => {
     clearAllFeedbackImages();
   });
@@ -120,7 +123,7 @@
     }
 
     const reviewBusy = state.loading || state.findingFeedbackLoading;
-    const previousScrollTop = root.querySelector(".bbai-detail-scroll")?.scrollTop || 0;
+    captureDetailScrollTop();
     root.innerHTML = `
       <div class="bbai-header">
         <div class="bbai-title-block">
@@ -160,7 +163,10 @@
     applyPosition();
 
     const detailScroll = root.querySelector(".bbai-detail-scroll");
-    if (detailScroll) detailScroll.scrollTop = previousScrollTop;
+    if (detailScroll) {
+      detailScroll.scrollTop = state.detailScrollTop;
+      detailScroll.addEventListener("scroll", captureDetailScrollTop, { passive: true });
+    }
 
     root.querySelector('[data-action="close"]').addEventListener("click", () => {
       closePanel();
@@ -243,6 +249,12 @@
     window.addEventListener("bbai-location-change", () => {
       if (location.href === currentUrl) return;
 
+      if (ignoreNextHashOnlyLocationChange && isSamePullRequestUrl(currentUrl, location.href)) {
+        currentUrl = location.href;
+        ignoreNextHashOnlyLocationChange = false;
+        return;
+      }
+
       currentUrl = location.href;
       resetPageState();
       render();
@@ -266,31 +278,14 @@
     state.settingsBusy = false;
     state.settingsMessage = "";
     state.settingsError = false;
+    state.detailScrollTop = 0;
     resetFeedbackState({ includeLoading: true });
     state.findingFeedbackLoading = activeRequestForPage && state.activeRequestKind === "finding";
     clearCloseTimer();
   }
 
-  function installOutsideCloseHandler() {
-    document.addEventListener(
-      "pointerdown",
-      (event) => {
-        if (!state.open || state.closing || state.dragging) return;
-
-        const target = event.target;
-        if (root.contains(target) || ballRoot.contains(target)) return;
-
-        closePanel();
-      },
-      true
-    );
-  }
-
   function togglePanel() {
-    if (state.open || state.closing) {
-      closePanel();
-      return;
-    }
+    if (state.open || state.closing) return;
 
     openPanel();
   }
@@ -303,6 +298,7 @@
   }
 
   function closePanel({ immediate = false } = {}) {
+    captureDetailScrollTop();
     clearCloseTimer();
     clearAllFeedbackImages();
 
@@ -320,6 +316,11 @@
       state.closeTimer = null;
       render();
     }, CLOSE_ANIMATION_MS);
+  }
+
+  function captureDetailScrollTop() {
+    const detailScroll = root.querySelector(".bbai-detail-scroll");
+    if (detailScroll) state.detailScrollTop = detailScroll.scrollTop;
   }
 
   function clearCloseTimer() {
@@ -477,7 +478,8 @@
         feedback: normalizedFeedback,
         baseReviewId,
         requestId,
-        images
+        images,
+        feedbackContext: isFollowUp ? state.overallFeedbackConversation : []
       });
 
       if (!isCurrentRequest(requestId, requestUrl)) return;
@@ -491,6 +493,11 @@
       state.restoredReviewId = state.history[0]?.id || "";
       state.status = summarizeResult(response.result);
       if (isFollowUp) {
+        state.overallFeedbackConversation = appendOverallFeedbackConversation(
+          state.overallFeedbackConversation,
+          normalizedFeedback,
+          response.result
+        );
         clearFeedbackImages("overall");
         state.overallFeedbackOpen = false;
         state.overallFeedbackDraft = "";
@@ -529,6 +536,10 @@
 
     root.querySelectorAll('[data-action="toggle-finding-feedback"]').forEach((button) => {
       button.addEventListener("click", () => toggleFindingFeedback(button.dataset.findingIndex));
+    });
+
+    root.querySelectorAll('[data-action="jump-to-finding"]').forEach((button) => {
+      button.addEventListener("click", () => jumpToFinding(button.dataset.filePath, button.dataset.line));
     });
 
     root.querySelector('[data-action="finding-feedback-input"]')?.addEventListener("input", (event) => {
@@ -1032,6 +1043,17 @@
     if (includeLoading) state.findingFeedbackLoading = false;
     state.overallFeedbackOpen = false;
     state.overallFeedbackDraft = "";
+    state.overallFeedbackConversation = [];
+  }
+
+  function appendOverallFeedbackConversation(rounds, feedback, result) {
+    return [
+      ...(Array.isArray(rounds) ? rounds : []),
+      {
+        feedback,
+        response: summarizeFeedbackConversationResponse(result)
+      }
+    ].slice(-6);
   }
 
   function createRequestId() {
@@ -1218,12 +1240,25 @@
 
   function renderFinding(finding, index) {
     const location = [finding.filePath, finding.line ? `第 ${finding.line} 行` : ""].filter(Boolean).join(" / ");
+    const jumpTarget = buildFindingJumpTarget(finding);
     const dismissed = finding.reviewStatus === "dismissed";
     const feedbackOpen = state.feedbackFindingIndex === index;
+    const locationTitle = jumpTarget.filePath ? `跳转到 ${location}` : location || "无文件路径";
+    const locationContent = jumpTarget.filePath
+      ? `
+        <button class="bbai-finding-file-link" type="button" data-action="jump-to-finding" data-file-path="${escapeHtml(jumpTarget.filePath)}" data-line="${jumpTarget.line || ""}" title="${escapeHtml(locationTitle)}">
+          <span>${escapeHtml(location || "查看文件")}</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 17 17 7"></path>
+            <path d="M9 7h8v8"></path>
+          </svg>
+        </button>
+      `
+      : escapeHtml(location || "无文件路径");
 
     return `
       <div class="bbai-finding-block">
-        <div class="bbai-finding-file" title="${escapeHtml(location || "无文件路径")}">${escapeHtml(location || "无文件路径")}</div>
+        <div class="bbai-finding-file" title="${escapeHtml(locationTitle)}">${locationContent}</div>
         <article class="bbai-finding bbai-finding--${finding.severity}${dismissed ? " bbai-finding--dismissed" : ""}${feedbackOpen ? " bbai-finding--feedback-open" : ""}">
           <div class="bbai-finding-top">
             <span class="bbai-severity${dismissed ? " bbai-severity--dismissed" : ""}">${dismissed ? "已撤回" : formatSeverity(finding.severity)}</span>
@@ -1245,6 +1280,329 @@
         </article>
       </div>
     `;
+  }
+
+  function buildFindingJumpTarget(finding) {
+    const filePath = normalizeFindingFilePath(finding?.filePath);
+    const line = Number.parseInt(finding?.line, 10);
+    return {
+      filePath,
+      line: Number.isFinite(line) && line > 0 ? line : 0
+    };
+  }
+
+  async function jumpToFinding(filePath, line) {
+    const normalizedPath = normalizeFindingFilePath(filePath);
+    const lineNumber = Number.parseInt(line, 10);
+    if (!normalizedPath) return;
+
+    const pullRequest = state.result?.pullRequest || {};
+    const diffUrl = buildPullRequestDiffUrl(pullRequest, normalizedPath);
+    if (diffUrl && !isCurrentPullRequestDiffPage(pullRequest)) {
+      location.assign(diffUrl);
+      return;
+    }
+
+    updateDiffHash(normalizedPath);
+    await scrollToDiffLocation(normalizedPath, Number.isFinite(lineNumber) ? lineNumber : 0);
+  }
+
+  function buildPullRequestDiffUrl(pullRequest, filePath) {
+    if (!pullRequest.origin || !pullRequest.projectKey || !pullRequest.repoSlug || !pullRequest.pullRequestId) {
+      return "";
+    }
+
+    const url = new URL(
+      `/projects/${encodeURIComponent(pullRequest.projectKey)}/repos/${encodeURIComponent(pullRequest.repoSlug)}/pull-requests/${encodeURIComponent(pullRequest.pullRequestId)}/diff`,
+      pullRequest.origin
+    );
+    if (filePath) url.hash = filePath;
+    return url.toString();
+  }
+
+  function isCurrentPullRequestDiffPage(pullRequest) {
+    const match = location.pathname.match(/\/projects\/([^/]+)\/repos\/([^/]+)\/pull-requests\/([^/]+)\/diff\/?$/i);
+    if (!match) return false;
+
+    return (
+      location.origin === pullRequest.origin &&
+      decodeURIComponent(match[1]) === pullRequest.projectKey &&
+      decodeURIComponent(match[2]) === pullRequest.repoSlug &&
+      decodeURIComponent(match[3]) === String(pullRequest.pullRequestId)
+    );
+  }
+
+  function updateDiffHash(filePath) {
+    if (decodeHashPath(location.hash) === filePath) return;
+
+    ignoreNextHashOnlyLocationChange = true;
+    location.hash = filePath;
+    setTimeout(() => {
+      ignoreNextHashOnlyLocationChange = false;
+    }, 800);
+  }
+
+  async function scrollToDiffLocation(filePath, line) {
+    const fileElement = await findDiffFileElement(filePath);
+    if (!fileElement) return false;
+
+    if (line > 0) {
+      await expandDiffContext(fileElement, line);
+    }
+
+    const lineElement = line > 0 ? await findLineElementWithRetries(fileElement, line) : null;
+    const target = lineElement || fileElement;
+    target.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    highlightJumpTarget(target);
+    return true;
+  }
+
+  async function findDiffFileElement(filePath) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const fileElement = getDiffFileElement(filePath);
+      if (fileElement) return fileElement;
+      await wait(160);
+    }
+    return null;
+  }
+
+  function getDiffFileElement(filePath) {
+    const normalizedPath = normalizeFindingFilePath(filePath).toLowerCase();
+    const directElement = document.getElementById(filePath) || document.getElementById(encodeURI(filePath));
+    const candidates = directElement
+      ? [directElement]
+      : Array.from(
+          document.querySelectorAll(
+            "[data-file-path], [data-path], [data-file], [data-filename], [id], [name], a[href*='#'], .file-header, .diff-header"
+          )
+        ).filter((element) => elementMatchesFilePath(element, normalizedPath));
+
+    return (
+      candidates
+        .map((element) => getDiffFileContainer(element))
+        .filter(Boolean)
+        .sort((left, right) => getDiffContainerScore(right) - getDiffContainerScore(left))[0] || null
+    );
+  }
+
+  function elementMatchesFilePath(element, normalizedPath) {
+    const values = [
+      element.id,
+      element.getAttribute("name"),
+      element.getAttribute("data-file-path"),
+      element.getAttribute("data-path"),
+      element.getAttribute("data-file"),
+      element.getAttribute("data-filename"),
+      decodeHashPath(element.getAttribute("href") || ""),
+      element.textContent
+    ];
+
+    return values.some((value) => {
+      const normalizedValue = normalizeFindingFilePath(value).toLowerCase();
+      return normalizedValue === normalizedPath || normalizedValue.includes(normalizedPath);
+    });
+  }
+
+  function getDiffFileContainer(element) {
+    const containerSelector = [
+      "[data-file-path]",
+      "[data-path]",
+      ".diff-file",
+      ".file-content",
+      ".file-container",
+      ".diff-content",
+      ".iterable-item",
+      ".commentable-diff",
+      "section"
+    ].join(",");
+
+    let current = element;
+    while (current && current !== document.body) {
+      if (current.matches?.(containerSelector) && getDiffContainerScore(current) > 0) return current;
+      current = current.parentElement;
+    }
+    return element;
+  }
+
+  function getDiffContainerScore(element) {
+    if (!element || element.closest?.(".bbai-panel")) return 0;
+    const lineCount =
+      element.querySelectorAll?.("[data-line-number], [data-line], .line-number, .lineNumber, td, th").length || 0;
+    const rect = element.getBoundingClientRect?.();
+    const visibleScore = rect && rect.width > 0 && rect.height > 0 ? 1 : 0;
+    return Math.min(lineCount, 20) + visibleScore;
+  }
+
+  async function expandDiffContext(container, line) {
+    for (let round = 0; round < 8; round += 1) {
+      if (findLineElement(container, line) || findLineElementAfter(container, line)) return;
+
+      const controls = getDiffExpandControls(container, line).slice(0, round < 2 ? 3 : 8);
+      if (!controls.length) return;
+
+      controls.forEach((control) => control.click());
+      await wait(320);
+    }
+  }
+
+  function getDiffExpandControls(container, line) {
+    const contextPattern =
+      /(show|display|load|expand).*(line|context|more)|hidden lines|omitted|context|展开.*(行|上下文|代码)|显示.*(行|上下文|更多)|更多.*(行|上下文)/i;
+
+    const controls = Array.from(
+      container.querySelectorAll(
+        [
+          "button",
+          "a",
+          "[role='button']",
+          "[class*='expand']",
+          "[class*='Expand']",
+          "[class*='context']",
+          "[class*='Context']",
+          "[class*='skipped']",
+          "[class*='Skipped']",
+          "[data-action*='expand']",
+          "[data-action*='context']",
+          "[data-expand]",
+          "[data-context-lines]"
+        ].join(",")
+      )
+    )
+      .map((element) => getClickableExpandTarget(element))
+      .filter((control) => {
+        if (!control || !isVisibleElement(control) || control.closest(".bbai-panel")) return false;
+        const label = [
+          control.textContent,
+          control.getAttribute("title"),
+          control.getAttribute("aria-label"),
+          control.getAttribute("class"),
+          control.getAttribute("data-action")
+        ].join(" ");
+        return contextPattern.test(label);
+      });
+
+    return uniqueElements([...getExpandControlsNearLine(container, line, controls), ...controls]);
+  }
+
+  function getClickableExpandTarget(element) {
+    return element.closest("button, a, [role='button']") || (typeof element.click === "function" ? element : null);
+  }
+
+  function getExpandControlsNearLine(container, line, controls) {
+    const references = getLineReferences(container);
+    const previous = references.filter((reference) => reference.line < line).at(-1);
+    const next = references.find((reference) => reference.line > line);
+    if (!previous && !next) return [];
+
+    return controls.filter((control) => {
+      const anchor = control.closest("tr, .diff-line, .line") || control;
+      const afterPrevious = !previous || isElementAfter(anchor, previous.element);
+      const beforeNext = !next || isElementBefore(anchor, next.element);
+      return afterPrevious && beforeNext;
+    });
+  }
+
+  function getLineReferences(container) {
+    return uniqueElements(getLineCandidates(container).map((element) => element.closest("tr, .diff-line, .line, [data-line]") || element))
+      .map((element) => ({ element, line: getElementLineNumber(element) || getLineNumberFromChildren(element) }))
+      .filter((reference) => reference.line > 0)
+      .sort((left, right) => (isElementAfter(left.element, right.element) ? 1 : -1));
+  }
+
+  function getLineNumberFromChildren(element) {
+    const lineElement = getLineCandidates(element).find((candidate) => getElementLineNumber(candidate) > 0);
+    return lineElement ? getElementLineNumber(lineElement) : 0;
+  }
+
+  async function findLineElementWithRetries(container, line) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const lineElement = findLineElement(container, line) || findLineElementAfter(container, line) || findLineElement(document, line);
+      if (lineElement) return lineElement;
+      await wait(140);
+    }
+    return null;
+  }
+
+  function findLineElement(container, line) {
+    const candidates = getLineCandidates(container);
+    const match = candidates.find((element) => getElementLineNumber(element) === line);
+    return match?.closest("tr, .diff-line, .line, [data-line]") || match || null;
+  }
+
+  function findLineElementAfter(anchor, line) {
+    if (!anchor || anchor === document) return null;
+
+    const candidates = getLineCandidates(document).filter((element) => getElementLineNumber(element) === line);
+    const match = candidates.find((element) => isElementAfter(element, anchor));
+    return match?.closest("tr, .diff-line, .line, [data-line]") || match || null;
+  }
+
+  function getLineCandidates(container) {
+    return Array.from(
+      container.querySelectorAll(
+        "[data-line-number], [data-line], [data-linenumber], [data-source-line], [data-new-line], [data-old-line], .line-number, .lineNumber, .line-num, .diff-line-number, td, th"
+      )
+    );
+  }
+
+  function getElementLineNumber(element) {
+    const attrs = ["data-line-number", "data-line", "data-linenumber", "data-source-line", "data-new-line", "data-old-line"];
+    for (const attr of attrs) {
+      const value = Number.parseInt(element.getAttribute(attr), 10);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+
+    const text = String(element.textContent || "").trim();
+    return /^\d+$/.test(text) ? Number.parseInt(text, 10) : 0;
+  }
+
+  function isElementAfter(element, anchor) {
+    return Boolean(anchor.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }
+
+  function isElementBefore(element, anchor) {
+    return Boolean(anchor.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_PRECEDING);
+  }
+
+  function uniqueElements(elements) {
+    return Array.from(new Set(elements.filter(Boolean)));
+  }
+
+  function highlightJumpTarget(element) {
+    element.classList.add("bbai-jump-highlight");
+    setTimeout(() => {
+      element.classList.remove("bbai-jump-highlight");
+    }, 1800);
+  }
+
+  function isVisibleElement(element) {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function decodeHashPath(value) {
+    const hash = String(value || "").split("#").pop() || "";
+    try {
+      return decodeURIComponent(hash);
+    } catch {
+      return hash;
+    }
+  }
+
+  function normalizeFindingFilePath(value) {
+    return String(value || "")
+      .trim()
+      .replace(/^["']|["']$/g, "")
+      .replace(/\\/g, "/")
+      .replace(/^a\//, "")
+      .replace(/^b\//, "")
+      .replace(/\s+\([A-Z_]+\)$/i, "")
+      .replace(/^\/+/, "");
   }
 
   function renderFindingFeedbackComposer(index, loading) {
@@ -1354,6 +1712,19 @@
     const urgent = findings.filter((finding) => finding.severity === "urgent").length;
     const suggestions = findings.length - urgent;
     return `评审完成：${urgent} 个紧急问题，${suggestions} 条建议。`;
+  }
+
+  function summarizeFeedbackConversationResponse(result) {
+    const findings = getActiveFindings(result);
+    if (!findings.length) return "AI 重新审查后未保留问题。";
+
+    return findings
+      .slice(0, 10)
+      .map((finding, index) => {
+        const location = [finding.filePath, finding.line ? `第 ${finding.line} 行` : ""].filter(Boolean).join(" / ");
+        return `${index + 1}. ${finding.title || "未命名问题"}${location ? `（${location}）` : ""}`;
+      })
+      .join("\n");
   }
 
   function getActiveFindings(result) {

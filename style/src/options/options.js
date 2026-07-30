@@ -9,6 +9,8 @@ const controls = {
   showSize: document.getElementById("showSize"),
   showFont: document.getElementById("showFont"),
   showColor: document.getElementById("showColor"),
+  selectionModeClick: document.getElementById("selectionModeClick"),
+  selectionModeBox: document.getElementById("selectionModeBox"),
   selectionDescendants: document.getElementById("selectionDescendants"),
   selectionSelf: document.getElementById("selectionSelf"),
   opacity: document.getElementById("opacity"),
@@ -36,6 +38,8 @@ function render(settings) {
   controls.showSize.checked = settings.showSize;
   controls.showFont.checked = settings.showFont;
   controls.showColor.checked = settings.showColor;
+  controls.selectionModeClick.checked = settings.selectionMode === "click";
+  controls.selectionModeBox.checked = settings.selectionMode === "box";
   controls.selectionDescendants.checked = settings.selectionScope === "descendants";
   controls.selectionSelf.checked = settings.selectionScope === "self";
   controls.opacity.value = String(settings.opacity);
@@ -89,6 +93,18 @@ bindCheckbox(controls.showGap, "showGap");
 bindCheckbox(controls.showSize, "showSize");
 bindCheckbox(controls.showFont, "showFont");
 bindCheckbox(controls.showColor, "showColor");
+
+controls.selectionModeClick.addEventListener("change", () => {
+  if (controls.selectionModeClick.checked) {
+    void persist({ selectionMode: "click" });
+  }
+});
+
+controls.selectionModeBox.addEventListener("change", () => {
+  if (controls.selectionModeBox.checked) {
+    void persist({ selectionMode: "box" });
+  }
+});
 
 function bindLayerColor(control, key) {
   control.addEventListener("change", () => {

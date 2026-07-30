@@ -2,6 +2,7 @@ export const SETTINGS_STORAGE_KEY = "styleInspectorSettings";
 
 export const DEFAULT_SETTINGS = Object.freeze({
   selectionScope: "descendants",
+  selectionMode: "click",
   showPadding: true,
   showMargin: true,
   showBorder: true,
@@ -51,6 +52,7 @@ export function sanitizeSettings(input = {}, changedFields = {}) {
   const inputLayerColors = input.layerColors && typeof input.layerColors === "object" ? input.layerColors : {};
   const settings = {
     selectionScope: input.selectionScope === "self" ? "self" : DEFAULT_SETTINGS.selectionScope,
+    selectionMode: input.selectionMode === "box" ? "box" : DEFAULT_SETTINGS.selectionMode,
     showPadding: toBoolean(input.showPadding, DEFAULT_SETTINGS.showPadding),
     showMargin: toBoolean(input.showMargin, DEFAULT_SETTINGS.showMargin),
     showBorder: toBoolean(input.showBorder, DEFAULT_SETTINGS.showBorder),

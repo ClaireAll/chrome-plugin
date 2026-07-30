@@ -77,13 +77,17 @@ function getClassTokens(element) {
 
 function findToken(element, prefixes) {
   const tokens = getClassTokens(element);
-  return tokens.find((token) => prefixes.some((prefix) => token === prefix || token.startsWith(prefix)));
+  return tokens.find((token) => prefixes.some((prefix) => tokenMatchesPrefix(token, prefix)));
 }
 
 function findTokens(element, prefixes) {
   return getClassTokens(element).filter((token) =>
-    prefixes.some((prefix) => token === prefix || token.startsWith(prefix))
+    prefixes.some((prefix) => tokenMatchesPrefix(token, prefix))
   );
+}
+
+function tokenMatchesPrefix(token, prefix) {
+  return prefix.endsWith("-") ? token === prefix || token.startsWith(prefix) : token === prefix;
 }
 
 function tokenValue(element, prefixes, value, style) {
@@ -99,7 +103,7 @@ function tokenListValue(element, prefixes, value, style) {
   return `${tokens.join(", ")}\uFF08${computedTokenDisplayValue(element, tokens[0], value, style)}\uFF09`;
 }
 
-function sideTokenValue(element, sidePrefixes, shorthandPrefixes, value, allValues, style) {
+function sideTokenValue(element, sidePrefixes, shorthandPrefixes, value, allValues, style, properties = [], options = {}) {
   const sideToken = findToken(element, sidePrefixes);
   if (sideToken) {
     return `${sideToken}\uFF08${computedTokenDisplayValue(element, sideToken, value, style)}\uFF09`;
@@ -107,10 +111,17 @@ function sideTokenValue(element, sidePrefixes, shorthandPrefixes, value, allValu
 
   const allSidesMatch = allValues?.every((item) => item === value);
   if (allSidesMatch) {
-    return tokenValue(element, shorthandPrefixes, value, style);
+    const shorthandValue = tokenValue(element, shorthandPrefixes, value, style);
+    if (shorthandValue !== value) {
+      return shorthandValue;
+    }
   }
 
-  return value;
+  if (!options.includeSourceDetails) {
+    return value;
+  }
+
+  return uniqueValues([value, ...lengthDeclarationSummaries(element, style, properties)]).join(" | ");
 }
 
 function rootFontSize(element) {
@@ -583,13 +594,22 @@ function colorPropertiesForLabel(label) {
 }
 
 function colorMetricRow(element, label, prefixes, color, raw = color, options = {}) {
+  const includeSourceDetails = options.includeSourceDetails === true;
   const token = options.token || findToken(element, prefixes);
   const properties = colorPropertiesForLabel(label);
-  const tokenMatch = declarationMatchForToken(element, token, properties, options.state);
-  const elementMatch = declarationMatchForElement(element, properties, options.state);
+  const tokenMatch = includeSourceDetails ? declarationMatchForToken(element, token, properties, options.state) : null;
+  const elementMatch = includeSourceDetails ? declarationMatchForElement(element, properties, options.state) : null;
   const cssValue = options.cssValue || tokenMatch?.value || elementMatch?.value || "";
   const cssTokens = uniqueValues([token, ...(options.tokens || []), ...(tokenMatch?.tokens || []), ...(elementMatch?.tokens || [])]);
-  const colorInfo = resolvedCssColor(element, cssValue, color);
+  const colorInfo = includeSourceDetails
+    ? resolvedCssColor(element, cssValue, color)
+    : {
+        cssVariable: "",
+        cssVariables: [],
+        rgb: rgbString(color),
+        hex: hexString(color),
+        color: rgbString(color) || color
+      };
   const value = [cssTokens.join(", "), colorInfo.cssVariables.join(", "), colorInfo.rgb, colorInfo.hex].filter(Boolean).join(" | ");
   return {
     type: "color",
@@ -647,7 +667,12 @@ function pseudoColorRows(element) {
           continue;
         }
         seen.add(key);
-        rows.push(colorMetricRow(element, group.label, [], color, cssValue, { state, token, cssValue }));
+        rows.push(colorMetricRow(element, group.label, [], color, cssValue, {
+          state,
+          token,
+          cssValue,
+          includeSourceDetails: true
+        }));
       }
     }
   }
@@ -689,15 +714,127 @@ const SIZE_DETAIL_PROPERTIES = [
   "font-size"
 ];
 
+const PADDING_DETAIL_PROPERTIES = ["padding-left", "padding-right", "padding-top", "padding-bottom"];
+
 function variableLengthDisplay(element, name, style, fallbackValue) {
   const rawValue = customPropertyValue(element, name);
   const resolved = resolvedLengthTokenValue(rawValue, element, style);
-  return `${name}${resolved || rawValue || fallbackValue ? ` (${resolved || rawValue || fallbackValue})` : ""}`;
+  const value = fallbackValue || resolved || rawValue;
+  return `${name}${value ? ` (${value})` : ""}`;
 }
 
-function sizeDeclarationSummaries(element, style) {
-  const summaries = [];
-  const seen = new Set();
+function resolvedDeclarationLengthValue(element, cssValue, style, computedValue) {
+  const variables = cssVariableNames(cssValue);
+  if (variables.length) {
+    return (
+      variables
+        .map((name) => resolvedLengthTokenValue(customPropertyValue(element, name), element, style))
+        .find(Boolean) ||
+      computedValue ||
+      ""
+    );
+  }
+
+  return resolvedLengthTokenValue(cssValue, element, style);
+}
+
+function lengthDeclarationMatchesComputed(element, cssValue, style, computedValue) {
+  const resolved = resolvedDeclarationLengthValue(element, cssValue, style, computedValue);
+  if (!resolved || !computedValue) {
+    return true;
+  }
+
+  return Math.abs(toNumber(resolved) - toNumber(computedValue)) < 0.01;
+}
+
+function lengthDeclarationSummaries(element, style, properties) {
+  const summariesByProperty = new Map();
+  const requestedProperties = new Set(properties);
+  const variableBackedProperties = new Set();
+
+  function declarationDisplay(cssValue, computedValue) {
+    const variables = cssVariableNames(cssValue);
+    if (variables.length) {
+      return variables.map((name) => variableLengthDisplay(element, name, style, computedValue)).join(", ");
+    }
+    return `${cssValue}${computedValue && computedValue !== cssValue ? ` (${computedValue})` : ""}`;
+  }
+
+  function setSummary(property, cssValue, computedValue) {
+    if (!cssValue) {
+      return;
+    }
+    if (!lengthDeclarationMatchesComputed(element, cssValue, style, computedValue)) {
+      return;
+    }
+
+    const hasVariables = cssVariableNames(cssValue).length > 0;
+    if (!hasVariables && variableBackedProperties.has(property)) {
+      return;
+    }
+
+    const summary = `${property}: ${declarationDisplay(cssValue, computedValue)}`;
+    summariesByProperty.set(property, summary);
+    if (hasVariables) {
+      variableBackedProperties.add(property);
+    }
+  }
+
+  function splitDeclarationTokens(value) {
+    const tokens = [];
+    let current = "";
+    let depth = 0;
+
+    for (const char of String(value || "").trim()) {
+      if (char === "(") {
+        depth += 1;
+      } else if (char === ")") {
+        depth = Math.max(0, depth - 1);
+      }
+
+      if (/\s/.test(char) && depth === 0) {
+        if (current) {
+          tokens.push(current);
+          current = "";
+        }
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (current) {
+      tokens.push(current);
+    }
+    return tokens;
+  }
+
+  function expandedBoxValue(cssValue, side) {
+    const tokens = splitDeclarationTokens(cssValue);
+    if (!tokens.length) {
+      return "";
+    }
+
+    const [top, right = top, bottom = top, left = right] = tokens;
+    return { top, right, bottom, left }[side] || "";
+  }
+
+  function setBoxShorthandSummaries(property, cssValue) {
+    const sides = [
+      ["top", `${property}-top`],
+      ["right", `${property}-right`],
+      ["bottom", `${property}-bottom`],
+      ["left", `${property}-left`]
+    ];
+
+    for (const [side, longhand] of sides) {
+      if (!requestedProperties.has(longhand)) {
+        continue;
+      }
+      const expandedValue = expandedBoxValue(cssValue, side) || cssValue;
+      setSummary(longhand, expandedValue, stylePropertyValue(style, longhand));
+    }
+  }
 
   for (const rule of cssRulesFromDocument(element?.ownerDocument || globalThis.document)) {
     for (const selector of splitSelectorList(rule.selectorText)) {
@@ -706,37 +843,48 @@ function sizeDeclarationSummaries(element, style) {
         continue;
       }
 
-      const selectorTokens = selectorClassTokens(element, selector);
-      for (const property of SIZE_DETAIL_PROPERTIES) {
+      for (const property of properties) {
         const cssValue = stylePropertyValue(rule.style, property);
         if (!cssValue) {
           continue;
         }
 
-        const variables = cssVariableNames(cssValue);
-        if (!variables.length && !selectorTokens.length) {
-          continue;
-        }
+        setSummary(property, cssValue, stylePropertyValue(style, property));
+      }
 
-        const computedValue = stylePropertyValue(style, property);
-        const valueText = variables.length
-          ? variables.map((name) => variableLengthDisplay(element, name, style, computedValue)).join(", ")
-          : `${cssValue}${computedValue && computedValue !== cssValue ? ` (${computedValue})` : ""}`;
-        const summary = `${property}: ${[selectorTokens.join(", "), valueText].filter(Boolean).join(" | ")}`;
-        if (!seen.has(summary)) {
-          seen.add(summary);
-          summaries.push(summary);
+      for (const property of ["padding", "margin"]) {
+        const cssValue = stylePropertyValue(rule.style, property);
+        if (cssValue) {
+          setBoxShorthandSummaries(property, cssValue);
         }
       }
     }
   }
 
-  return summaries;
+  return properties.map((property) => summariesByProperty.get(property)).filter(Boolean);
 }
 
-function sizeMetricValue(element, style, width, height) {
+function sizeDeclarationSummaries(element, style) {
+  return lengthDeclarationSummaries(element, style, SIZE_DETAIL_PROPERTIES);
+}
+
+function sizeMetricValue(element, style, width, height, options = {}) {
   const sizeText = tokenListValue(element, ["size-", "w-", "h-"], `${width}×${height}`, style);
+  if (!options.includeSourceDetails) {
+    return sizeText;
+  }
   return uniqueValues([sizeText, ...sizeDeclarationSummaries(element, style)]).join(" | ");
+}
+
+function tokenValueWithDeclarations(element, prefixes, value, style, properties, options = {}) {
+  if (!options.includeSourceDetails) {
+    return tokenValue(element, prefixes, value, style);
+  }
+
+  return uniqueValues([
+    tokenValue(element, prefixes, value, style),
+    ...lengthDeclarationSummaries(element, style, properties)
+  ]).join(" | ");
 }
 
 function primaryFontFamily(fontFamily) {
@@ -1180,6 +1328,7 @@ export function shouldInspectElement(element) {
 }
 
 export function createBoxModel(element, style, settings) {
+  const includeSourceDetails = settings?.includeSourceDetails === true;
   const paddingValues = sideValues(style, "padding");
   const marginValues = sideValues(style, "margin");
   const borderValues = borderWidthValues(style);
@@ -1195,7 +1344,7 @@ export function createBoxModel(element, style, settings) {
       metricEnabled(settings, "showSize") && width && height
         ? {
             type: "size",
-            value: sizeMetricValue(element, style, width, height),
+            value: sizeMetricValue(element, style, width, height, { includeSourceDetails }),
             width,
             height
           }
@@ -1215,7 +1364,17 @@ export function createBoxModel(element, style, settings) {
               ["p-", "padding-"],
               value,
               paddingList,
-              style
+              style,
+              [
+                side === "top"
+                  ? "padding-top"
+                  : side === "right"
+                    ? "padding-right"
+                    : side === "bottom"
+                      ? "padding-bottom"
+                      : "padding-left"
+              ],
+              { includeSourceDetails }
             )
           )
         : null,
@@ -1260,8 +1419,8 @@ export function createBoxModel(element, style, settings) {
     gap:
       metricEnabled(settings, "showGap") && ((rowGap && rowGap !== "normal") || (columnGap && columnGap !== "normal"))
         ? {
-            row: tokenValue(element, ["gap-y-", "gap-"], rowGap, style),
-            column: tokenValue(element, ["gap-x-", "gap-"], columnGap, style)
+            row: tokenValue(element, ["gap-y-", "gap-", "gap"], rowGap, style),
+            column: tokenValue(element, ["gap-x-", "gap-", "gap"], columnGap, style)
           }
         : null
   };
@@ -1357,18 +1516,25 @@ export function planLabelPlacements(items, options = {}) {
 
 export function createMetricRows(element, style, settings) {
   const rows = [];
+  const includeSourceDetails = settings?.includeSourceDetails === true;
 
   if (settings.showColor) {
-    const textRow = visibleColorMetricRow(element, "text", ["text-"], style.color);
+    const textRow = visibleColorMetricRow(element, "text", ["text-"], style.color, style.color, {
+      includeSourceDetails
+    });
     if (textRow) {
       rows.push(textRow);
     }
-    const bgRow = visibleColorMetricRow(element, "bg", ["bg-"], style.backgroundColor);
+    const bgRow = visibleColorMetricRow(element, "bg", ["bg-"], style.backgroundColor, style.backgroundColor, {
+      includeSourceDetails
+    });
     if (bgRow) {
       rows.push(bgRow);
     }
     if (hasVisibleBorder(style)) {
-      const borderRow = visibleColorMetricRow(element, "border", ["border-"], style.borderTopColor);
+      const borderRow = visibleColorMetricRow(element, "border", ["border-"], style.borderTopColor, style.borderTopColor, {
+        includeSourceDetails
+      });
       if (borderRow) {
         rows.push(borderRow);
       }
@@ -1380,11 +1546,14 @@ export function createMetricRows(element, style, settings) {
           "shadow",
           ["shadow-"],
           extractShadowColor(style.boxShadow),
-          style.boxShadow
+          style.boxShadow,
+          { includeSourceDetails }
         )
       );
     }
-    rows.push(...pseudoColorRows(element));
+    if (includeSourceDetails) {
+      rows.push(...pseudoColorRows(element));
+    }
     return rows;
   }
 
@@ -1401,7 +1570,14 @@ export function createMetricRows(element, style, settings) {
     rows.push({
       type: "padding",
       label: "padding",
-      value: tokenValue(element, ["p-", "px-", "py-", "pt-", "pr-", "pb-", "pl-", "padding-"], value, style)
+      value: tokenValueWithDeclarations(
+        element,
+        ["p-", "px-", "py-", "pt-", "pr-", "pb-", "pl-", "padding-"],
+        value,
+        style,
+        PADDING_DETAIL_PROPERTIES,
+        { includeSourceDetails }
+      )
     });
   }
 
@@ -1441,7 +1617,7 @@ export function createMetricRows(element, style, settings) {
     rows.push({
       type: "gap",
       label: "gap",
-      value: tokenValue(element, ["gap-", "gap-x-", "gap-y-"], gapValue, style)
+      value: tokenValue(element, ["gap-", "gap-x-", "gap-y-", "gap"], gapValue, style)
     });
   }
 
@@ -1462,7 +1638,7 @@ export function createMetricRows(element, style, settings) {
       rows.push({
         type: "size",
         label: "size",
-        value: sizeMetricValue(element, style, width, height)
+        value: sizeMetricValue(element, style, width, height, { includeSourceDetails })
       });
     }
   }

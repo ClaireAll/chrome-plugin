@@ -6,6 +6,7 @@
 
   const FALLBACK_SETTINGS = {
     selectionScope: "descendants",
+    selectionMode: "click",
     showPadding: true,
     showMargin: true,
     showBorder: true,
@@ -45,6 +46,9 @@
   let cleanupCallbacks = [];
   let frameHandle = 0;
   let selectedElement = null;
+  let analysisElement = null;
+  let boxDrag = null;
+  let analysisPanelDismissed = false;
   let hoveredOverlayKey = null;
   let nextOverlayKey = 1;
   const overlayKeys = new WeakMap();
@@ -105,6 +109,7 @@
     }
     root = existing;
     root.dataset.mode = "select";
+    root.dataset.selectionMode = settings.selectionMode || "click";
     root.style.setProperty("--si-label-size", `${settings.labelSize}px`);
     root.style.setProperty("--si-theme-accent", settings.highlightColor);
     root.style.setProperty("--si-theme-fill", alphaColor(settings.highlightColor, settings.opacity));
@@ -120,10 +125,181 @@
     root = null;
   }
 
-  function rowSummary(rows) {
+  function splitMetricParts(value) {
+    return String(value || "")
+      .split(" | ")
+      .flatMap((part) => part.split("\n"))
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  function finalTextFromSource(text) {
+    const match = String(text || "").match(/(?:\uFF08([^\uFF08\uFF09()]+)\uFF09|\(([^()]+)\))\s*$/);
+    if (!match) {
+      return "";
+    }
+    return (match[1] || match[2] || "").split(/\s*,\s*/)[0].trim();
+  }
+
+  function directClassTokenPart(value, element) {
+    const firstPart = splitMetricParts(value)[0] || String(value || "");
+    const tokens = elementClassTokens(element).sort((a, b) => b.length - a.length);
+    for (const token of tokens) {
+      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(`^${escaped}(?=$|\\s|\uFF08|\\()`).test(firstPart)) {
+        return {
+          token,
+          value: finalTextFromSource(firstPart)
+        };
+      }
+    }
+    return null;
+  }
+
+  function metricPrimaryFromClass(value, element) {
+    return Boolean(directClassTokenPart(value, element));
+  }
+
+  function metricPrimaryText(value, element = null) {
+    const firstPart = splitMetricParts(value)[0] || String(value || "");
+    const directClass = directClassTokenPart(value, element);
+    if (directClass) {
+      return `\uD83C\uDF88 ${[directClass.token, directClass.value].filter(Boolean).join(" ")}`;
+    }
+
+    const primary = finalTextFromSource(firstPart) || firstPart;
+    return primary;
+  }
+
+  function rowSummary(rows, element = null) {
     return rows
-      .map((row) => `${row.label}: ${row.value}`)
+      .map((row) => `${row.label}: ${metricPrimaryText(row.value, element)}`)
       .join("\n");
+  }
+
+  function elementClassTokens(element) {
+    const className = element?.className;
+    if (!className) {
+      return [];
+    }
+    if (typeof className === "string") {
+      return className.split(/\s+/).filter(Boolean);
+    }
+    if (typeof className.baseVal === "string") {
+      return className.baseVal.split(/\s+/).filter(Boolean);
+    }
+    return Array.from(element?.classList || []).filter(Boolean);
+  }
+
+  function valuePartFromClass(element, part) {
+    return Boolean(directClassTokenPart(part, element));
+  }
+
+  function detailValueParts(parts, element) {
+    const firstPart = parts[0] || "";
+    if (directClassTokenPart(firstPart, element)) {
+      return parts.slice(1);
+    }
+    return finalTextFromSource(firstPart) || valuePartFromClass(element, firstPart) ? parts : parts.slice(1);
+  }
+
+  function formattedDetailParts(parts) {
+    const details = [];
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index];
+      const propertyMatch = part.match(/^([\w-]+):\s*(.*)$/);
+      const nextPart = parts[index + 1] || "";
+      if (propertyMatch && /^(var\(--[\w-]+\)|--[\w-]+)/.test(nextPart)) {
+        details.push(`${propertyMatch[1]}: ${nextPart}`);
+        index += 1;
+        continue;
+      }
+      details.push(part);
+    }
+    return details;
+  }
+
+  function metricValueLines(value, element) {
+    const parts = splitMetricParts(value);
+    const primary = metricPrimaryText(value, element);
+    const detailParts = formattedDetailParts(detailValueParts(parts, element));
+
+    const details = detailParts.map((part) => {
+      const fromClass = valuePartFromClass(element, part);
+      return {
+        text: `${fromClass ? "\uD83C\uDF88 " : ""}${part}`
+      };
+    });
+
+    return { primary, details };
+  }
+
+  function toggleMetricDetails(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const button = event.currentTarget;
+    const value = button.closest(".style-inspector-model-value");
+    const details = value?.querySelector(".style-inspector-model-value-details");
+    if (!details) {
+      return;
+    }
+
+    const expanded = button.getAttribute("aria-expanded") === "true";
+    button.setAttribute("aria-expanded", expanded ? "false" : "true");
+    button.setAttribute("aria-label", expanded ? "expand source details" : "collapse source details");
+    button.textContent = expanded ? "+" : "\u2212";
+    value.classList.toggle("is-expanded", !expanded);
+    details.hidden = expanded;
+  }
+
+  function renderMetricValue(value, element, options = {}) {
+    const { primary, details } = metricValueLines(value, element);
+    const container = document.createElement("strong");
+    container.className = "style-inspector-model-value";
+    if (details.length) {
+      container.classList.add("has-details");
+    }
+    if (options.expanded) {
+      container.classList.add("is-expanded");
+    }
+
+    const summary = document.createElement("span");
+    summary.className = "style-inspector-model-value-summary";
+
+    const primaryLine = document.createElement("span");
+    primaryLine.className = "style-inspector-model-value-line";
+    primaryLine.textContent = primary;
+    summary.append(primaryLine);
+
+    if (details.length && options.showToggle !== false) {
+      const toggle = document.createElement("button");
+      toggle.className = "style-inspector-model-value-toggle";
+      toggle.type = "button";
+      toggle.textContent = "+";
+      toggle.setAttribute("aria-label", "toggle source details");
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.addEventListener("click", toggleMetricDetails);
+      summary.append(toggle);
+    }
+
+    container.append(summary);
+
+    if (details.length) {
+      const detailsContainer = document.createElement("span");
+      detailsContainer.className = "style-inspector-model-value-details";
+      detailsContainer.hidden = !options.expanded;
+
+      for (const line of details) {
+        const item = document.createElement("span");
+        item.className = "style-inspector-model-value-line is-child";
+        item.textContent = line.text;
+        detailsContainer.append(item);
+      }
+
+      container.append(detailsContainer);
+    }
+
+    return container;
   }
 
   function createBox(item, variant = "global") {
@@ -147,9 +323,12 @@
   function applyLabelPlacement(label, placement) {
     label.classList.remove("is-top", "is-right", "is-bottom", "is-left");
     label.classList.add(`is-${placement.position}`);
-    label.style.left = `${Math.round(placement.left)}px`;
+    const minWidth = label.classList.contains("has-details") ? 172 : 0;
+    const width = Math.min(window.innerWidth - 12, Math.max(Math.round(placement.width), minWidth));
+    const left = Math.min(Math.max(6, Math.round(placement.left)), Math.max(6, window.innerWidth - width - 6));
+    label.style.left = `${left}px`;
     label.style.top = `${Math.round(placement.top)}px`;
-    label.style.maxWidth = `${Math.round(placement.width)}px`;
+    label.style.maxWidth = `${width}px`;
   }
 
   function labelAvoidRects(boundary) {
@@ -243,7 +422,22 @@
       .forEach((node) => node.classList.add("is-target-hover"));
   }
 
-  function bindLabelHover(box, label) {
+  function selectElementFromLabel(event, element) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!enabled || !element?.isConnected) {
+      return;
+    }
+
+    analysisElement = element;
+    boxDrag = null;
+    analysisPanelDismissed = false;
+    const renderElement = selectedElement?.isConnected ? selectedElement : element;
+    selectedElement = renderElement;
+    getInspectorModule().then((inspector) => renderSelectedElement(inspector, renderElement));
+  }
+
+  function bindLabelHover(box, label, item) {
     const rows = Array.from(label.querySelectorAll("[data-style-inspector-target-type]"));
 
     for (const row of rows) {
@@ -265,6 +459,7 @@
       rows.forEach((row) => row.classList.remove("is-target-hover"));
       clearLabelTarget();
     });
+    label.addEventListener("click", (event) => selectElementFromLabel(event, item.element));
   }
 
   function getOverlayKey(element) {
@@ -321,6 +516,80 @@
     node.style.top = `${Math.max(rect.top, 0)}px`;
     node.style.width = `${Math.max(rect.width, 0)}px`;
     node.style.height = `${Math.max(rect.height, 0)}px`;
+  }
+
+  function documentPointFromEvent(event) {
+    return {
+      x: event.clientX + window.scrollX,
+      y: event.clientY + window.scrollY
+    };
+  }
+
+  function documentBoxFromPoints(start, end) {
+    const left = Math.min(start.x, end.x);
+    const top = Math.min(start.y, end.y);
+    const right = Math.max(start.x, end.x);
+    const bottom = Math.max(start.y, end.y);
+    return {
+      left,
+      top,
+      right,
+      bottom,
+      width: right - left,
+      height: bottom - top
+    };
+  }
+
+  function viewportRectFromDocumentBox(box) {
+    return {
+      left: box.left - window.scrollX,
+      top: box.top - window.scrollY,
+      width: box.width,
+      height: box.height
+    };
+  }
+
+  function rectsIntersect(a, b) {
+    return a.left < b.left + b.width && a.left + a.width > b.left && a.top < b.top + b.height && a.top + a.height > b.top;
+  }
+
+  function rectRight(rect) {
+    return rect.left + rect.width;
+  }
+
+  function rectBottom(rect) {
+    return rect.top + rect.height;
+  }
+
+  function rectCenter(rect) {
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2
+    };
+  }
+
+  function pointInsideRect(point, rect) {
+    return point.x >= rect.left && point.x <= rectRight(rect) && point.y >= rect.top && point.y <= rectBottom(rect);
+  }
+
+  function intersectionArea(a, b) {
+    const width = Math.max(0, Math.min(rectRight(a), rectRight(b)) - Math.max(a.left, b.left));
+    const height = Math.max(0, Math.min(rectBottom(a), rectBottom(b)) - Math.max(a.top, b.top));
+    return width * height;
+  }
+
+  function selectionCandidateScore(rect, selectionRect) {
+    const center = rectCenter(rect);
+    const selectionCenter = rectCenter(selectionRect);
+    const edgeDistance =
+      Math.abs(rect.left - selectionRect.left) +
+      Math.abs(rect.top - selectionRect.top) +
+      Math.abs(rectRight(rect) - rectRight(selectionRect)) +
+      Math.abs(rectBottom(rect) - rectBottom(selectionRect));
+    const centerDistance = Math.hypot(center.x - selectionCenter.x, center.y - selectionCenter.y);
+    const areaDifference = Math.abs(rect.width * rect.height - selectionRect.width * selectionRect.height);
+    const overlapRatio = intersectionArea(rect, selectionRect) / Math.max(1, Math.min(rect.width * rect.height, selectionRect.width * selectionRect.height));
+    return edgeDistance + centerDistance * 0.35 + areaDifference * 0.002 - overlapRatio * 120;
   }
 
   function createLayer(className, rect, type, text, overlayKey) {
@@ -429,7 +698,14 @@
     };
   }
 
-  function appendSideSection(panel, title, type, sides) {
+  function dismissAnalysisPanel(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    analysisPanelDismissed = true;
+    root?.querySelectorAll(".style-inspector-analysis-panel").forEach((panel) => panel.remove());
+  }
+
+  function appendSideSection(panel, title, type, sides, element) {
     if (!sides) {
       return;
     }
@@ -449,8 +725,7 @@
       cell.className = `style-inspector-model-cell is-${key}`;
       const name = document.createElement("span");
       name.textContent = key;
-      const value = document.createElement("strong");
-      value.textContent = sides[key];
+      const value = renderMetricValue(sides[key], element, { expanded: true, showToggle: false });
       cell.append(name, value);
       grid.append(cell);
     }
@@ -463,30 +738,53 @@
     const panel = document.createElement("aside");
     panel.className = "style-inspector-analysis-panel";
 
+    const header = document.createElement("div");
+    header.className = "style-inspector-analysis-header";
+
     const title = document.createElement("div");
     title.className = "style-inspector-analysis-title";
     title.textContent = `${item.element.tagName.toLowerCase()} selected`;
-    panel.append(title);
+
+    const close = document.createElement("button");
+    close.className = "style-inspector-analysis-close";
+    close.type = "button";
+    close.setAttribute("aria-label", "close analysis panel");
+    close.textContent = "\u274C";
+    close.addEventListener("click", dismissAnalysisPanel);
+
+    header.append(title, close);
+    panel.append(header);
 
     if (model.size) {
       const size = document.createElement("div");
       size.className = "style-inspector-size-line";
-      size.textContent = model.size.value;
+      size.append(renderMetricValue(model.size.value, item.element, { expanded: true, showToggle: false }));
       panel.append(size);
     }
 
-    appendSideSection(panel, "Margin", "margin", model.margin);
-    appendSideSection(panel, "Border", "border", model.border);
-    appendSideSection(panel, "Padding", "padding", model.padding);
+    appendSideSection(panel, "Margin", "margin", model.margin, item.element);
+    appendSideSection(panel, "Border", "border", model.border, item.element);
+    appendSideSection(panel, "Padding", "padding", model.padding, item.element);
 
     if (model.gap) {
       const gap = document.createElement("section");
       gap.className = "style-inspector-model-section is-gap";
       gap.style.setProperty("--si-section-color", layerColor("gap"));
-      gap.innerHTML = `<h3>Gap</h3><div class="style-inspector-gap-values"><span>row</span><strong></strong><span>column</span><strong></strong></div>`;
-      const values = gap.querySelectorAll("strong");
-      values[0].textContent = model.gap.row;
-      values[1].textContent = model.gap.column;
+      const heading = document.createElement("h3");
+      heading.textContent = "Gap";
+      gap.append(heading);
+
+      const values = document.createElement("div");
+      values.className = "style-inspector-gap-values";
+      for (const [label, value] of [
+        ["row", model.gap.row],
+        ["column", model.gap.column]
+      ]) {
+        const name = document.createElement("span");
+        name.textContent = label;
+        values.append(name, renderMetricValue(value, item.element, { expanded: true, showToggle: false }));
+      }
+      gap.append(values);
       panel.append(gap);
     }
 
@@ -532,11 +830,17 @@
       appendGapMarkers(fragment, inspector, item, overlayKey);
     }
 
-    fragment.append(renderAnalysisPanel(item, model));
     return fragment;
   }
 
-  function buildItem(inspector, element) {
+  function renderSelectedAnalysisPanel(item) {
+    if (!item || analysisPanelDismissed || settings.showColor) {
+      return document.createDocumentFragment();
+    }
+    return renderAnalysisPanel(item, item.model);
+  }
+
+  function buildItem(inspector, element, options = {}) {
     if (!element || root?.contains(element)) {
       return null;
     }
@@ -547,8 +851,12 @@
       return null;
     }
 
-    const rows = inspector.createMetricRows(element, style, settings);
-    const model = inspector.createBoxModel(element, style, settings);
+    const itemSettings = {
+      ...settings,
+      includeSourceDetails: options.includeSourceDetails === true
+    };
+    const rows = inspector.createMetricRows(element, style, itemSettings);
+    const model = inspector.createBoxModel(element, style, itemSettings);
     return { element, rect, rows, style, model };
   }
 
@@ -603,19 +911,20 @@
 
   function getSelectedElements(inspector, element) {
     if (settings.selectionScope === "self") {
-      const item = buildItem(inspector, element);
+      const item = buildItem(inspector, element, { includeSourceDetails: true });
       const selectedWithRows = ensureSelectedRows(item);
       return selectedWithRows ? keepFirstTextFontRow([selectedWithRows]) : [];
     }
 
     const results = [];
-    const selectedItem = buildItem(inspector, element);
+    const selectedItem = buildItem(inspector, element, { includeSourceDetails: settings.showColor });
     const selectedWithRows = ensureSelectedRows(selectedItem);
     if (selectedWithRows?.rows.length) {
       results.push(selectedWithRows);
     }
 
-    for (const child of Array.from(element.querySelectorAll("*"))) {
+    const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_ELEMENT);
+    for (let child = walker.nextNode(); child; child = walker.nextNode()) {
       if (root?.contains(child)) {
         continue;
       }
@@ -661,6 +970,13 @@
     return boundary;
   }
 
+  function renderBoxSelectionBoundary(box, variant = "") {
+    const boundary = document.createElement("div");
+    boundary.className = `style-inspector-selection-boundary is-box${variant ? ` ${variant}` : ""}`;
+    setRect(boundary, viewportRectFromDocumentBox(box));
+    return boundary;
+  }
+
   function renderSelectedSelf(inspector, item) {
     if (settings.showColor) {
       return renderOverlayItems(inspector, [item], "selected-child");
@@ -668,6 +984,7 @@
 
     const fragment = document.createDocumentFragment();
     fragment.append(renderBoxModelLayers(inspector, item, item.model, getOverlayKey(item.element)));
+    fragment.append(renderSelectedAnalysisPanel(item));
     if (item.rows.length) {
       fragment.append(renderOverlayItems(inspector, [item], "selected-child"));
     }
@@ -688,15 +1005,61 @@
 
     const fragment = document.createDocumentFragment();
     fragment.append(renderSelectionBoundary(element));
+    const analysisTarget =
+      analysisElement?.isConnected && (analysisElement === element || element.contains(analysisElement))
+        ? analysisElement
+        : element;
+    if (analysisTarget === element) {
+      analysisElement = null;
+    }
+    const selectedAnalysisItem = settings.showColor
+      ? null
+      : ensureSelectedRows(buildItem(inspector, analysisTarget, { includeSourceDetails: true }));
     for (const item of items) {
       fragment.append(renderBoxModelLayers(inspector, item, item.model, getOverlayKey(item.element)));
     }
+    fragment.append(renderSelectedAnalysisPanel(selectedAnalysisItem));
     fragment.append(
       renderOverlayItems(inspector, items, "selected-child", {
         avoidRect: element.getBoundingClientRect()
       })
     );
     root.replaceChildren(fragment);
+  }
+
+  function divFromSelectionBox(box) {
+    const selectionRect = viewportRectFromDocumentBox(box);
+    const selectionCenter = rectCenter(selectionRect);
+    const candidates = [];
+    const fallbackCandidates = [];
+
+    for (const element of Array.from(document.getElementsByTagName("div"))) {
+      if (root?.contains(element)) {
+        continue;
+      }
+
+      const rect = element.getBoundingClientRect();
+      if (!rectsIntersect(rect, selectionRect)) {
+        continue;
+      }
+      if (rect.width < 2 || rect.height < 2) {
+        continue;
+      }
+
+      const candidate = {
+        element,
+        rect,
+        score: selectionCandidateScore(rect, selectionRect)
+      };
+      if (pointInsideRect(rectCenter(rect), selectionRect) || pointInsideRect(selectionCenter, rect)) {
+        candidates.push(candidate);
+      } else {
+        fallbackCandidates.push(candidate);
+      }
+    }
+
+    const best = (candidates.length ? candidates : fallbackCandidates).sort((a, b) => a.score - b.score)[0];
+    return best?.element || null;
   }
 
   function renderLabel(item) {
@@ -716,8 +1079,6 @@
         if (row.label === "shadow") {
           swatch.style.boxShadow = row.raw || row.value;
         }
-        swatch.title = row.value;
-
         const name = document.createElement("span");
         name.className = "style-inspector-color-name";
         name.textContent = row.state ? `${row.state} ${row.label}` : row.label;
@@ -733,6 +1094,9 @@
     }
 
     label.classList.add("style-inspector-value-list");
+    if (item.rows.some((row) => metricValueLines(row.value, item.element).details.length)) {
+      label.classList.add("has-details");
+    }
     for (const row of item.rows) {
       const line = document.createElement("div");
       line.className = `style-inspector-value-row is-${row.type}`;
@@ -742,8 +1106,7 @@
       const name = document.createElement("span");
       name.textContent = row.label;
 
-      const value = document.createElement("strong");
-      value.textContent = row.value;
+      const value = renderMetricValue(row.value, item.element);
 
       line.append(name, value);
       label.append(line);
@@ -752,7 +1115,7 @@
   }
 
   function labelTextForItem(item) {
-    return rowSummary(item.rows) || item.element.tagName.toLowerCase();
+    return rowSummary(item.rows, item.element) || item.element.tagName.toLowerCase();
   }
 
   function renderOverlayItems(inspector, items, variant = "global", options = {}) {
@@ -775,7 +1138,7 @@
       const box = createBox(item, variant);
       const label = renderLabel(item);
       applyLabelPlacement(label, placements[index]);
-      bindLabelHover(box, label);
+      bindLabelHover(box, label, item);
       box.append(createConnector(item, placements[index]));
       box.append(label);
       fragment.append(box);
@@ -818,6 +1181,83 @@
     return target && !root.contains(target) ? target : null;
   }
 
+  function boxSelectionMode() {
+    return settings.selectionMode === "box";
+  }
+
+  function overlayControlTarget(target) {
+    return Boolean(
+      root?.contains(target) &&
+        target.closest?.(
+          ".style-inspector-analysis-panel, .style-inspector-label, .style-inspector-model-value-toggle"
+        )
+    );
+  }
+
+  function renderBoxDrag() {
+    if (!boxDrag || !root) {
+      return;
+    }
+    const box = documentBoxFromPoints(boxDrag.start, boxDrag.current);
+    root.replaceChildren(renderBoxSelectionBoundary(box, "is-draft"));
+  }
+
+  function startBoxSelection(event) {
+    if (!enabled || !boxSelectionMode() || event.button !== 0 || overlayControlTarget(event.target)) {
+      return;
+    }
+
+    const point = documentPointFromEvent(event);
+    boxDrag = {
+      start: point,
+      current: point
+    };
+    selectedElement = null;
+    analysisPanelDismissed = false;
+    renderBoxDrag();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function moveBoxSelection(event) {
+    if (!boxDrag) {
+      return;
+    }
+
+    boxDrag.current = documentPointFromEvent(event);
+    renderBoxDrag();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function finishBoxSelection(event) {
+    if (!boxDrag) {
+      return;
+    }
+
+    boxDrag.current = documentPointFromEvent(event);
+    const box = documentBoxFromPoints(boxDrag.start, boxDrag.current);
+    boxDrag = null;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (box.width < 4 || box.height < 4) {
+      root?.replaceChildren();
+      return;
+    }
+
+    const target = divFromSelectionBox(box);
+    if (!target) {
+      root?.replaceChildren();
+      return;
+    }
+
+    selectedElement = target;
+    analysisElement = null;
+    analysisPanelDismissed = false;
+    getInspectorModule().then((inspector) => renderSelectedElement(inspector, selectedElement));
+  }
+
   function scheduleRender() {
     if (frameHandle) {
       return;
@@ -839,11 +1279,25 @@
       },
       true
     );
+    addListener(document, "pointerdown", startBoxSelection, true);
+    addListener(document, "pointermove", moveBoxSelection, true);
+    addListener(document, "pointerup", finishBoxSelection, true);
+    addListener(document, "pointercancel", finishBoxSelection, true);
     addListener(
       document,
       "click",
       (event) => {
         if (!enabled) {
+          return;
+        }
+        if (boxSelectionMode()) {
+          if (!overlayControlTarget(event.target)) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+          return;
+        }
+        if (root?.contains(event.target)) {
           return;
         }
         const target = root?.contains(event.target)
@@ -855,6 +1309,8 @@
         event.preventDefault();
         event.stopPropagation();
         selectedElement = target;
+        analysisElement = null;
+        analysisPanelDismissed = false;
         getInspectorModule().then((inspector) => renderSelectedElement(inspector, selectedElement));
       },
       true
@@ -863,10 +1319,12 @@
       document,
       "keydown",
       (event) => {
-        if (event.key !== "Escape" || !selectedElement) {
+        if (event.key !== "Escape" || (!selectedElement && !boxDrag)) {
           return;
         }
         selectedElement = null;
+        analysisElement = null;
+        boxDrag = null;
         root?.replaceChildren();
       },
       true
@@ -884,6 +1342,9 @@
   function disableInspector() {
     enabled = false;
     selectedElement = null;
+    analysisElement = null;
+    boxDrag = null;
+    analysisPanelDismissed = false;
     cleanupCallbacks.forEach((cleanup) => cleanup());
     cleanupCallbacks = [];
     if (frameHandle) {
@@ -911,7 +1372,14 @@
     }
 
     if (message?.type === UPDATE_MESSAGE) {
+      const previousSelectionMode = settings.selectionMode;
       settings = { ...settings, ...message.settings };
+      if (previousSelectionMode !== settings.selectionMode) {
+        selectedElement = null;
+        analysisElement = null;
+        boxDrag = null;
+        analysisPanelDismissed = false;
+      }
       if (enabled) {
         ensureRoot();
         void renderGlobal();

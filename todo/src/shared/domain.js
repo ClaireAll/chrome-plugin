@@ -61,10 +61,19 @@ export function normalizeTodoItems(input) {
 
 export function addTodoItem(items, text, settings = {}, now = new Date().toISOString()) {
   const trimmedText = String(text || "").trim();
-  if (!trimmedText) return normalizeTodoItems(items);
-  return [...normalizeTodoItems(items), createTodoItem(trimmedText, {
-    color: settings.defaultColor || DEFAULT_COLOR_PRESETS[0]
+  const source = normalizeTodoItems(items);
+  if (!trimmedText) return source;
+  return [...source, createTodoItem(trimmedText, {
+    color: nextTodoColor(source, settings)
   }, now)];
+}
+
+function nextTodoColor(items, settings = {}) {
+  const presets = Array.isArray(settings.colorPresets) && settings.colorPresets.length ? settings.colorPresets : DEFAULT_COLOR_PRESETS;
+  const lastColor = items[items.length - 1]?.color;
+  if (!lastColor) return presets[0];
+  const currentIndex = presets.findIndex((color) => color.toLowerCase() === String(lastColor).toLowerCase());
+  return presets[currentIndex < 0 ? 0 : (currentIndex + 1) % presets.length];
 }
 
 export function updateTodoText(items, id, text, now = new Date().toISOString()) {

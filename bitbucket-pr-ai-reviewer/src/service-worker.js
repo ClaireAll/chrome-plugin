@@ -6,6 +6,7 @@ import {
   REVIEW_HISTORY_KEY,
   createReviewKey,
   createReviewRecord,
+  decorateReviewRecord,
   findLatestReviewForPullRequest,
   updateReviewRecord,
   upsertReviewHistory
@@ -47,7 +48,7 @@ async function handleMessage(message, sender) {
     case "get-review-request-status":
       return getReviewRequestStatus(message.url || sender.tab?.url);
     case "delete-review-history":
-      return { history: await deleteReviewHistoryRecord(message.id) };
+      return { history: (await deleteReviewHistoryRecord(message.id)).map(decorateReviewRecord) };
     case "cancel-review-request":
       cancelReviewRequest(message.requestId);
       return {};
@@ -105,7 +106,7 @@ async function reviewCurrentPullRequest(
   const chunks = chunkDiff(diffText, settings.maxDiffCharsPerChunk);
 
   if (!chunks.length) {
-    progress("本次 PR 只有测试文件改动，已跳过代码审查。");
+    progress("本次 PR 只有测试或 Markdown 文件改动，已跳过代码审查。");
     const result = {
       pullRequest,
       pullRequestInfo,
@@ -132,7 +133,15 @@ async function reviewCurrentPullRequest(
   const reviewDiffText = chunks.join("\n\n");
   const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, settings, reviewDiffText, progress, signal);
   signal?.throwIfAborted();
-  const reviewEvidenceContext = await fetchReviewEvidenceContext(pullRequest, pullRequestInfo, changedFiles, settings, progress, signal);
+  const reviewEvidenceContext = await fetchReviewEvidenceContext(
+    pullRequest,
+    pullRequestInfo,
+    changedFiles,
+    settings,
+    progress,
+    signal,
+    { diffText: reviewDiffText }
+  );
   signal?.throwIfAborted();
 
   let visualEvidence = "";
@@ -240,7 +249,18 @@ async function reviewFindingWithFeedback({
   const { pullRequestInfo, commits, changedFiles, diffText } = await fetchPullRequestDiff(pullRequest, settings, progress, signal);
   signal?.throwIfAborted();
   const relevantDiff = selectRelevantDiff(diffText, finding.filePath, finding.line, settings.maxDiffCharsPerChunk);
-  const reviewEvidenceContext = await fetchReviewEvidenceContext(pullRequest, pullRequestInfo, [finding.filePath], settings, progress, signal);
+  const reviewEvidenceContext = await fetchReviewEvidenceContext(
+    pullRequest,
+    pullRequestInfo,
+    [finding.filePath],
+    settings,
+    progress,
+    signal,
+    {
+      diffText: relevantDiff,
+      focusLineByPath: { [finding.filePath]: finding.line }
+    }
+  );
   signal?.throwIfAborted();
   const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, settings, relevantDiff, progress, signal);
   signal?.throwIfAborted();
@@ -315,7 +335,7 @@ async function reviewFindingWithFeedback({
 
   return {
     result: mutation.value.result,
-    history: mutation.history,
+    history: mutation.history.map(decorateReviewRecord),
     reviewId: mutation.value.reviewId,
     verdict: reviewed.verdict
   };
@@ -350,8 +370,8 @@ async function getReviewHistory(url) {
   }
 
   return {
-    history,
-    currentReview
+    history: history.map(decorateReviewRecord),
+    currentReview: currentReview ? decorateReviewRecord(currentReview) : null
   };
 }
 
@@ -370,7 +390,7 @@ async function saveReviewHistory(url, result, { preserveReviewId = "" } = {}) {
   const mutation = await mutateReviewHistory((history) => ({
     history: upsertReviewHistory(history, record, undefined, [preserveReviewId])
   }));
-  return mutation.history;
+  return mutation.history.map(decorateReviewRecord);
 }
 
 async function deleteReviewHistoryRecord(id) {
@@ -590,7 +610,8 @@ function toFindingSnapshot(finding) {
     line: finding?.line ?? null,
     title: finding?.title || "",
     detail: finding?.detail || "",
-    suggestion: finding?.suggestion || ""
+    suggestion: finding?.suggestion || "",
+    evidence: finding?.evidence || null
   };
 }
 

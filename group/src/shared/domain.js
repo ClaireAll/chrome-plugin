@@ -1,4 +1,6 @@
 const DEFAULT_GROUP_NAME = "未分组";
+const DEFAULT_GROUP_ICONS = ["📁", "📂", "🗂️", "📌", "🧩", "📝", "💡", "🎈"];
+const DEFAULT_GROUP_COLORS = ["#3b82f6", "#8b5cf6", "#22c55e", "#f59e0b", "#14b8a6", "#ef4444", "#6366f1"];
 const KNOWN_TITLE_SUFFIXES = new Set([
   "github",
   "gitlab",
@@ -97,6 +99,8 @@ export function addPageToGroup(data, request) {
     group = {
       id: createId("group"),
       name: groupName,
+      icon: pickRandom(DEFAULT_GROUP_ICONS),
+      color: pickRandom(DEFAULT_GROUP_COLORS),
       createdAt: now,
       updatedAt: now,
       pages: [],
@@ -139,11 +143,8 @@ export function getQuickAccessPages(data, limit = 5) {
   );
 
   return pages
-    .filter((page) => page.quickAccessPinned || page.openCount > 0)
+    .filter((page) => page.quickAccessPinned)
     .sort((left, right) => {
-      if (left.quickAccessPinned !== right.quickAccessPinned) {
-        return left.quickAccessPinned ? -1 : 1;
-      }
       if (left.openCount !== right.openCount) return right.openCount - left.openCount;
       return String(right.lastOpenedAt || "").localeCompare(String(left.lastOpenedAt || ""));
     })
@@ -218,6 +219,28 @@ export function renameGroup(data, groupId, name) {
     ...source,
     groups: source.groups.map((group) =>
       group.id === groupId ? { ...cloneGroup(group), name: nextName, updatedAt: now } : cloneGroup(group)
+    )
+  };
+}
+
+export function updateGroupAppearance(data, groupId, patch) {
+  const source = normalizeData(data);
+  const now = new Date().toISOString();
+  const changes = patch && typeof patch === "object" ? patch : {};
+  const hasIcon = Object.hasOwn(changes, "icon");
+  const hasColor = Object.hasOwn(changes, "color");
+
+  return {
+    ...source,
+    groups: source.groups.map((group) =>
+      group.id === groupId
+        ? {
+            ...cloneGroup(group),
+            icon: hasIcon ? sanitizeIcon(changes.icon) : group.icon,
+            color: hasColor ? sanitizeColor(changes.color) : group.color,
+            updatedAt: now
+          }
+        : cloneGroup(group)
     )
   };
 }
@@ -333,6 +356,8 @@ function normalizeGroup(group) {
   return {
     id: String(group.id || createId("group")),
     name,
+    icon: sanitizeIcon(group.icon),
+    color: sanitizeColor(group.color),
     createdAt: String(group.createdAt || now),
     updatedAt: String(group.updatedAt || group.createdAt || now),
     pages,
@@ -420,6 +445,16 @@ function normalizeOpenCount(value) {
   return Math.max(0, Math.floor(number));
 }
 
+function sanitizeIcon(value) {
+  const icon = String(value || "").trim();
+  return Array.from(icon).slice(0, 4).join("");
+}
+
+function sanitizeColor(value) {
+  const color = String(value || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color : "";
+}
+
 function domainFromUrl(url) {
   try {
     return new URL(url).hostname;
@@ -436,4 +471,8 @@ function titleFromUrl(url) {
 function createId(prefix) {
   const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}-${random}`;
+}
+
+function pickRandom(values) {
+  return values[Math.floor(Math.random() * values.length)] || "";
 }

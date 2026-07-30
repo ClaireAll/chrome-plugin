@@ -6,9 +6,9 @@
 
 | 目录 | 插件名 | 用途 |
 | --- | --- | --- |
-| `bitbucket-pr-ai-reviewer` | Bitbucket PR AI Reviewer | 在 `code.fineres.com` 的 Bitbucket Pull Request 页面内打开审查面板，读取 PR 信息和 diff，并调用 DeepSeek 生成代码审查建议；同时支持从面板打开飞书项目任务。 |
+| `bitbucket-pr-ai-reviewer` | Bitbucket PR AI Reviewer | 在 `code.fineres.com` 的 Bitbucket Pull Request 页面内打开审查面板，读取 PR 信息、diff 和项目上下文，并调用 DeepSeek 生成带结构化证据的代码审查建议；同时支持从面板打开飞书项目任务。 |
 | `feishu-jump` | Feishu Task Jumper | 输入飞书项目任务 key，例如 `f-7028807610`、`m-7040569864` 或纯数字任务号，快速打开对应任务详情页；也支持浏览器地址栏 `fs` 关键字跳转。 |
-| `group` | group | 将页面保存到本地分组中，便于按工作上下文快速重新打开一组相关页面。 |
+| `group` | group | 将页面保存到本地分组中，支持分组图标/颜色、快捷固定、内联重命名和批量打开，便于按工作上下文快速恢复一组相关页面。 |
 | `style` | Style Inspector | 在任意页面叠加 DOM 间距、尺寸、字体和颜色标注，用于前端视觉还原和样式排查。 |
 | `todo` | todo | 在页面上提供可拖拽的悬浮待办列表，支持提醒、颜色标记和本地已完成记录管理。 |
 
@@ -24,6 +24,9 @@
 
 ### 更新记录
 
+- 2026-07-30: `bitbucket-pr-ai-reviewer` 加强 AI 审查证据链，补充项目上下文读取、结构化 finding 证据、旧版审查记录提示，并收窄 diff 上下文配置范围。
+- 2026-07-30: `group` 优化浮窗和管理页体验，支持分组图标/颜色、分组按钮选择、页面内联重命名、固定快捷访问和页面移动。
+- 2026-07-30: `todo` 新增待办颜色按预设自动轮换，连续新增任务时更容易区分。
 - 2026-07-27: `todo` 优化悬浮待办面板视觉、提醒确认、颜色预设、完成记录只读展示和自适应高度。
 - 2026-07-27: `group` 补充扩展图标资源和 manifest 图标配置。
 - 2026-07-27: `bitbucket-pr-ai-reviewer` 补充本地默认配置示例文件，真实密钥仍保留在被忽略的本地配置中。

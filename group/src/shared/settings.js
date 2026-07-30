@@ -33,7 +33,7 @@ function sanitizeSettings(input) {
     accentColor: isHexColor(source.accentColor) ? source.accentColor : DEFAULT_SETTINGS.accentColor,
     ballSize: clampNumber(source.ballSize, 32, 72, DEFAULT_SETTINGS.ballSize),
     ballOpacity: clampNumber(source.ballOpacity, 0.25, 1, DEFAULT_SETTINGS.ballOpacity),
-    edgeOffset: clampNumber(source.edgeOffset, 0, 36, DEFAULT_SETTINGS.edgeOffset),
+    edgeOffset: clampNumber(source.edgeOffset, -36, 36, DEFAULT_SETTINGS.edgeOffset),
     edgeHide: typeof source.edgeHide === "boolean" ? source.edgeHide : DEFAULT_SETTINGS.edgeHide,
     showRecentGroupName:
       typeof source.showRecentGroupName === "boolean"

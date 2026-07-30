@@ -1,5 +1,6 @@
 import {
   buildFindingsVerificationPrompt,
+  buildFindingFeedbackVerificationPrompt,
   buildFindingFeedbackPrompt,
   buildReviewPrompt,
   buildVisualEvidencePrompt,
@@ -115,9 +116,36 @@ export async function reviewFindingFeedback({
   });
 
   const { value, rawText } = await requestStructuredCompletion(settings, prompt, parseFindingFeedbackResponse, { images, signal });
+  let verifiedValue = value;
+  let verificationRawText = "";
+
+  try {
+    const verificationPrompt = buildFindingFeedbackVerificationPrompt({
+      pullRequest,
+      pullRequestInfo,
+      commits,
+      changedFiles,
+      diffText,
+      finding,
+      category,
+      feedback,
+      feedbackRounds,
+      reviewRules: settings.reviewRules,
+      evidenceContext,
+      fineDesignReference,
+      reviewed: value
+    });
+    const verified = await requestStructuredCompletion(settings, verificationPrompt, parseFindingFeedbackResponse, { images, signal });
+    verifiedValue = verified.value;
+    verificationRawText = verified.rawText;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    verificationRawText = `feedback verification skipped: ${error.message || String(error)}`;
+  }
+
   return {
-    ...value,
-    rawText
+    ...verifiedValue,
+    rawText: `${rawText}\n\n[feedback verification]\n${verificationRawText}`
   };
 }
 

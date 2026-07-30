@@ -977,6 +977,18 @@
   overflow-wrap: anywhere;
 }
 
+.bbai-stale-review {
+  background: #fffaf0;
+  border: 1px solid rgba(231, 164, 66, 0.26);
+  border-radius: 6px;
+  color: #7c4f10;
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0 18px 8px;
+  padding: 8px 10px;
+}
+
 .bbai-findings {
   display: grid;
   gap: 8px;
@@ -1097,6 +1109,35 @@
   color: rgba(31, 55, 85, 0.82);
   line-height: 1.45;
   margin: 0;
+}
+
+.bbai-finding-evidence {
+  background: #f6fbff;
+  border: 1px solid rgba(126, 192, 255, 0.18);
+  border-radius: 6px;
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 9px;
+}
+
+.bbai-finding-evidence-row {
+  display: grid;
+  gap: 3px;
+}
+
+.bbai-finding-evidence-label {
+  color: rgba(42, 73, 104, 0.6);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.bbai-finding-evidence-text {
+  color: rgba(31, 55, 85, 0.84);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .bbai-fix {

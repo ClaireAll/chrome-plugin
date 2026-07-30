@@ -1,8 +1,13 @@
 import { DEFAULT_REVIEW_RULES } from "./settings.js";
 
 const ALLOWED_SEVERITIES = new Set(["urgent", "suggestion"]);
+const REVIEW_EVIDENCE_PROMPT_FILE_LIMIT = 12;
+const REVIEW_KNOWLEDGE_PROMPT_FILE_LIMIT = 4;
+const OVERSIZED_DIFF_HEADER_RESERVE = 1200;
 const TEST_REVIEW_FILE_PATTERN =
   /(^|\/)(__tests__|__test__|tests?|specs?)(\/|$)|(^|\/)(test|spec)\.(tsx?|jsx?|vue)$|\.(test|spec)\.(tsx?|jsx?|vue)$/i;
+const MARKDOWN_REVIEW_FILE_PATTERN = /\.md$/i;
+const JSON_REVIEW_FILE_PATTERN = /\.json$/i;
 
 export const REVIEW_RESPONSE_SCHEMA = {
   type: "object",
@@ -32,9 +37,28 @@ export const REVIEW_RESPONSE_SCHEMA = {
           },
           suggestion: {
             type: "string"
+          },
+          evidence: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              changedCode: {
+                type: "string"
+              },
+              triggerCondition: {
+                type: "string"
+              },
+              dataFlow: {
+                type: "string"
+              },
+              counterEvidenceChecked: {
+                type: "string"
+              }
+            },
+            required: ["changedCode", "triggerCondition", "dataFlow", "counterEvidenceChecked"]
           }
         },
-        required: ["severity", "filePath", "line", "title", "detail", "suggestion"]
+        required: ["severity", "filePath", "line", "title", "detail", "suggestion", "evidence"]
       }
     }
   },
@@ -47,14 +71,18 @@ export function chunkDiff(diff, maxChars = 12000) {
 
   if (!text) return [];
 
-  const sections = text.split(/\n(?=diff --git )/g).filter(isReviewableDiffSection);
+  const sections = text
+    .split(/\n(?=diff --git )/g)
+    .filter(isReviewableDiffSection)
+    .map(compactJsonDiffSection)
+    .filter((section) => section.trim());
   const chunks = [];
   let current = "";
 
   for (const section of sections) {
     if (section.length > size) {
       flushCurrent();
-      chunks.push(...chunkByLines(section, size));
+      chunks.push(...chunkOversizedDiffSection(section, size));
       continue;
     }
 
@@ -128,7 +156,8 @@ export function buildReviewPrompt({
       "Review focus:",
       "先根据 PR 标题、描述和 commit message 判断这次提交想解决什么，再审查 diff 是否真正满足这个目的。",
       "尤其关注逻辑问题、行为回归、边界条件、接口契约不一致、状态流转错误、权限范围变化和缺少必要测试。",
-      "不要审查 test.ts、*.test.ts、*.spec.ts 或 test/tests/__tests__ 目录下的测试文件改动，也不要为这些文件输出 finding。",
+      "不要审查 test.ts、*.test.ts、*.spec.ts、test/tests/__tests__ 目录下的测试文件改动，或 .md 文档改动，也不要为这些文件输出 finding。",
+      "审查 .json 文件时只围绕本次增删的 key/value 判断，不要根据相邻未改动 JSON key 或缺少完整上下文推断问题。",
       "如果代码实现与提交目的不一致，或者 diff 中能推导出明确的新逻辑错误，请优先作为 urgent 输出。",
       "减少“可能导致”“可能存在”这类猜测型 finding；每条 finding 必须说明由当前 diff 改动导致的触发条件、数据流、调用链、接口契约或状态流转依据。证据不足时返回空 findings。",
       "",
@@ -143,10 +172,16 @@ export function buildReviewPrompt({
       feedbackConversationContext,
       visualEvidenceContext,
       "",
+      "Evidence requirements:",
+      "- For every finding, fill evidence.changedCode with the exact changed branch, condition, assignment, call, prop, import, or deleted line that creates the issue.",
+      "- Fill evidence.triggerCondition with the runtime/user/data condition needed to hit the issue. If no concrete trigger can be named, drop the finding.",
+      "- Fill evidence.dataFlow with the call chain, state transition, prop flow, API contract, or component contract that proves the behavior.",
+      "- Fill evidence.counterEvidenceChecked with the source/context checked before reporting, especially symbols, current definitions, related call sites, or component references that did not disprove the issue.",
+      "",
       "Return JSON exactly in this shape:",
-      '{"findings":[{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"why this matters","suggestion":"specific fix"}]}',
+      '{"findings":[{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"evidence-backed reason","suggestion":"specific fix","evidence":{"changedCode":"changed code evidence","triggerCondition":"runtime trigger","dataFlow":"call/data/state/component contract proof","counterEvidenceChecked":"context checked before reporting"}}]}',
       "Use null for line when the line is unclear. Use an empty findings array when no issues are found.",
-      "Output language rule: except code snippets, file paths, identifiers, API names, component names, library names, command names, and other proper nouns, write title, detail, and suggestion in UTF-8 Simplified Chinese.",
+      "Output language rule: except code snippets, file paths, identifiers, API names, component names, library names, command names, and other proper nouns, write title, detail, suggestion, and evidence text in UTF-8 Simplified Chinese.",
       "",
       "Diff chunk:",
       "```diff",
@@ -204,15 +239,19 @@ export function buildFindingsVerificationPrompt({
       "",
       "Verification rules:",
       "- Keep a finding only when the diff and context prove a concrete failing path.",
-      "- Drop findings against test files such as test.ts, *.test.ts, *.spec.ts, and files under test/tests/__tests__.",
+      "- Drop findings against test files such as test.ts, *.test.ts, *.spec.ts, files under test/tests/__tests__, and .md documentation files.",
       "- Revise title/detail/suggestion when needed so the detail cites the changed branch, data flow, call chain, API contract, state transition, or rendered result that proves the issue.",
       "- Drop findings based only on possibility, missing project context, or generic best-practice preference.",
       "- Preserve filePath and line only when they are supported by the diff/context.",
       "",
+      "Evidence requirements:",
+      "- Each kept finding must have evidence.changedCode, evidence.triggerCondition, evidence.dataFlow, and evidence.counterEvidenceChecked.",
+      "- If any evidence field cannot be backed by the supplied diff/context, drop the finding instead of weakening it with speculative wording.",
+      "",
       "Return JSON exactly in this shape:",
-      '{"findings":[{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"evidence-backed reason","suggestion":"specific fix"}]}',
+      '{"findings":[{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"evidence-backed reason","suggestion":"specific fix","evidence":{"changedCode":"changed code evidence","triggerCondition":"runtime trigger","dataFlow":"call/data/state/component contract proof","counterEvidenceChecked":"context checked before reporting"}}]}',
       "Use an empty findings array when no candidate is sufficiently supported.",
-      "Output language rule: except code snippets, file paths, identifiers, API names, component names, library names, command names, and other proper nouns, write title, detail, and suggestion in UTF-8 Simplified Chinese.",
+      "Output language rule: except code snippets, file paths, identifiers, API names, component names, library names, command names, and other proper nouns, write title, detail, suggestion, and evidence text in UTF-8 Simplified Chinese.",
       "",
       "Diff chunk:",
       "```diff",
@@ -273,6 +312,7 @@ export function buildFindingFeedbackPrompt({
       "Independently decide whether the finding should be confirmed, revised, or dismissed.",
       "Use only the supplied pull request context and diff.",
       "Do not defend the previous answer by default and do not invent code outside the diff.",
+      "When the user's feedback cites a concrete line or code fragment, treat matching current source context as authoritative counter-evidence.",
       "Return only valid JSON matching the requested shape."
     ].join(" "),
     user: [
@@ -299,7 +339,7 @@ export function buildFindingFeedbackPrompt({
       JSON.stringify(stripFindingMetadata(finding), null, 2),
       priorRounds,
       "",
-      "Re-evaluation rule: confirm or revise the finding only when the supplied diff and context prove a concrete failing path. If the issue is only speculative, dismiss it.",
+      "Re-evaluation rule: confirm or revise the finding only when the supplied diff and context prove a concrete failing path. If the current source context contradicts the previous finding, dismiss it.",
       "",
       `User feedback category: ${String(category || "未分类")}`,
       "User feedback:",
@@ -311,10 +351,97 @@ export function buildFindingFeedbackPrompt({
       "- dismissed: the supplied code/context shows the issue is not actionable or is a false positive; return finding as null.",
       "- response must directly answer the user's feedback and explain the decision in concise Simplified Chinese.",
       "",
+      "Evidence requirements:",
+      "- confirmed/revised findings must include evidence.changedCode, evidence.triggerCondition, evidence.dataFlow, and evidence.counterEvidenceChecked.",
+      "- If the evidence fields cannot be filled from the supplied diff/context after considering user feedback, return dismissed.",
+      "",
       "Return JSON exactly in this shape:",
-      '{"verdict":"confirmed|revised|dismissed","response":"复审说明","finding":{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"why this matters","suggestion":"specific fix"}}',
+      '{"verdict":"confirmed|revised|dismissed","response":"复审说明","finding":{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"evidence-backed reason","suggestion":"specific fix","evidence":{"changedCode":"changed code evidence","triggerCondition":"runtime trigger","dataFlow":"call/data/state/component contract proof","counterEvidenceChecked":"context checked before reporting"}}}',
       "Use null for finding when verdict is dismissed. Use null for line when the line is unclear.",
-      "Except code snippets, file paths, identifiers, API names, component names, library names, command names, and proper nouns, write response and finding text in UTF-8 Simplified Chinese.",
+      "Except code snippets, file paths, identifiers, API names, component names, library names, command names, and proper nouns, write response, finding text, and evidence text in UTF-8 Simplified Chinese.",
+      "",
+      "Relevant diff:",
+      "```diff",
+      diffText,
+      "```"
+    ].join("\n")
+  };
+}
+
+export function buildFindingFeedbackVerificationPrompt({
+  pullRequest,
+  pullRequestInfo,
+  commits,
+  changedFiles,
+  diffText,
+  finding,
+  category,
+  feedback,
+  feedbackRounds = [],
+  reviewRules,
+  evidenceContext,
+  fineDesignReference,
+  reviewed
+}) {
+  const files = formatChangedFilesForPrompt(changedFiles);
+  const commitMessages = formatCommits(commits);
+  const rules = String(reviewRules || DEFAULT_REVIEW_RULES).trim();
+  const priorRounds = formatFeedbackRounds(feedbackRounds);
+  const reviewEvidenceContext = formatReviewEvidenceContext(evidenceContext, diffText, [finding, reviewed?.finding]);
+  const fineDesignReferenceContext = formatFineDesignReferenceContext(fineDesignReference);
+
+  return {
+    system: [
+      "You are a senior code reviewer verifying a single-finding re-evaluation.",
+      "Use the user's feedback, current diff, and current source context to catch false positives.",
+      "Return only valid JSON matching the requested shape."
+    ].join(" "),
+    user: [
+      `Pull request: ${pullRequest.projectKey}/${pullRequest.repoSlug}#${pullRequest.pullRequestId}`,
+      "",
+      "Pull request context:",
+      `PR title: ${pullRequestInfo?.title || "Unknown"}`,
+      `PR description: ${pullRequestInfo?.description || "No description"}`,
+      `Source branch: ${pullRequestInfo?.fromRef || "Unknown"}`,
+      `Target branch: ${pullRequestInfo?.toRef || "Unknown"}`,
+      "",
+      "Commit messages:",
+      commitMessages,
+      "",
+      "Changed files:",
+      files,
+      "",
+      "Review rules:",
+      rules,
+      reviewEvidenceContext,
+      fineDesignReferenceContext,
+      "",
+      "Previous finding:",
+      JSON.stringify(stripFindingMetadata(finding), null, 2),
+      priorRounds,
+      "",
+      `User feedback category: ${String(category || "未分类")}`,
+      "User feedback:",
+      String(feedback || "").trim(),
+      "",
+      "First-pass re-evaluation result:",
+      JSON.stringify(stripFeedbackReviewResult(reviewed), null, 2),
+      "",
+      "Verification rules:",
+      "- Treat focused current source snippets as authoritative source-branch evidence.",
+      "- If the user's feedback names a concrete line, symbol, function, or code fragment and the current source context confirms it exists, dismiss any finding that claims it is absent, renamed away, deleted, or unreachable.",
+      "- Do not keep a finding merely because it appeared in the previous review or first-pass result.",
+      "- Keep or revise the finding only when the current diff and context prove a concrete failing path after considering the user's counter-evidence.",
+      "- If the evidence is contradictory or insufficient, return dismissed with finding null.",
+      "",
+      "Evidence requirements:",
+      "- confirmed/revised findings must include evidence.changedCode, evidence.triggerCondition, evidence.dataFlow, and evidence.counterEvidenceChecked.",
+      "- If the evidence fields cannot be filled from the supplied diff/context after considering user feedback, return dismissed.",
+      "",
+      "Return JSON exactly in this shape:",
+      '{"verdict":"confirmed|revised|dismissed","response":"复审说明","finding":{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"evidence-backed reason","suggestion":"specific fix","evidence":{"changedCode":"changed code evidence","triggerCondition":"runtime trigger","dataFlow":"call/data/state/component contract proof","counterEvidenceChecked":"context checked before reporting"}}}',
+      "Use null for finding when verdict is dismissed. Use null for line when the line is unclear.",
+      "Except code snippets, file paths, identifiers, API names, component names, library names, command names, and proper nouns, write response, finding text, and evidence text in UTF-8 Simplified Chinese.",
       "",
       "Relevant diff:",
       "```diff",
@@ -425,6 +552,7 @@ export function normalizeFindings(input) {
       const suggestion = String(finding?.suggestion || "").trim();
       const filePath = String(finding?.filePath || finding?.path || "").trim();
       const parsedLine = Number.parseInt(finding?.line, 10);
+      const evidence = normalizeFindingEvidence(finding?.evidence);
 
       if (!ALLOWED_SEVERITIES.has(severity) || !title) {
         return null;
@@ -436,10 +564,21 @@ export function normalizeFindings(input) {
         line: Number.isFinite(parsedLine) && parsedLine > 0 ? parsedLine : null,
         title,
         detail,
-        suggestion
+        suggestion,
+        evidence
       };
     })
     .filter(Boolean);
+}
+
+function normalizeFindingEvidence(evidence) {
+  const source = evidence && typeof evidence === "object" && !Array.isArray(evidence) ? evidence : {};
+  return {
+    changedCode: String(source.changedCode || "").trim().slice(0, 1600),
+    triggerCondition: String(source.triggerCondition || "").trim().slice(0, 1600),
+    dataFlow: String(source.dataFlow || "").trim().slice(0, 1600),
+    counterEvidenceChecked: String(source.counterEvidenceChecked || "").trim().slice(0, 1600)
+  };
 }
 
 export function mergeFindings(chunks) {
@@ -462,6 +601,82 @@ function chunkByLines(text, size) {
 
   if (current.trim()) chunks.push(current.trim());
   return chunks;
+}
+
+function chunkOversizedDiffSection(section, size) {
+  const lines = String(section || "").split("\n");
+  const firstHunkIndex = lines.findIndex((line) => line.startsWith("@@ "));
+  if (firstHunkIndex < 0) {
+    return chunkByLines(section, size).filter(hasChangedDiffLine);
+  }
+
+  const header = lines.slice(0, firstHunkIndex).join("\n").slice(0, OVERSIZED_DIFF_HEADER_RESERVE);
+  const bodySize = Math.max(1, size - header.length - 2);
+  return chunkByLines(lines.slice(firstHunkIndex).join("\n"), bodySize)
+    .filter(hasChangedDiffLine)
+    .map((chunk) => `${header}\n${chunk}`.trim());
+}
+
+function compactJsonDiffSection(section) {
+  if (!isJsonDiffSection(section)) return section;
+
+  const lines = String(section || "").split("\n");
+  const compacted = [];
+  let inHunk = false;
+  let hunkHasChangedLine = false;
+  let lastKeptWasChangedLine = false;
+
+  for (const line of lines) {
+    if (line.startsWith("@@ ")) {
+      if (inHunk && !hunkHasChangedLine) {
+        compacted.pop();
+      }
+      compacted.push(line);
+      inHunk = true;
+      hunkHasChangedLine = false;
+      lastKeptWasChangedLine = false;
+      continue;
+    }
+
+    if (!inHunk) {
+      compacted.push(line);
+      continue;
+    }
+
+    if (isChangedDiffLine(line)) {
+      compacted.push(line);
+      hunkHasChangedLine = true;
+      lastKeptWasChangedLine = true;
+      continue;
+    }
+
+    if (lastKeptWasChangedLine && line.startsWith("\\ No newline")) {
+      compacted.push(line);
+      continue;
+    }
+
+    lastKeptWasChangedLine = false;
+  }
+
+  if (inHunk && !hunkHasChangedLine) {
+    compacted.pop();
+  }
+
+  return compacted.join("\n");
+}
+
+function hasChangedDiffLine(text) {
+  return String(text || "")
+    .split("\n")
+    .some(isChangedDiffLine);
+}
+
+function isChangedDiffLine(line) {
+  return (/^\+/.test(line) && !/^\+\+\+/.test(line)) || (/^-/.test(line) && !/^---/.test(line));
+}
+
+function isJsonDiffSection(section) {
+  return extractDiffFilePaths(section).some((path) => JSON_REVIEW_FILE_PATTERN.test(path));
 }
 
 function formatChangedFilesForPrompt(changedFiles) {
@@ -554,7 +769,8 @@ function formatReviewEvidenceContext(context, diffText, findings = []) {
   const lines = [
     "",
     "Additional source context fetched from Bitbucket:",
-    "Use this context to verify data flow, imports, and component usage. Do not report issues that the context disproves."
+    "Use this context to verify data flow, imports, component usage, symbol definitions, and likely call-site/examples. Treat current source snippets as authoritative evidence for the source branch. Do not report issues that the context disproves.",
+    "Files marked project-knowledge are symbol/path matched candidates; use them as supporting evidence only when they match the changed code path."
   ];
 
   if (context.error) {
@@ -583,9 +799,16 @@ function selectReviewEvidenceFiles(files, diffText, findings) {
   ].filter(Boolean));
 
   const changedFiles = allFiles.filter((file) => file.kind === "changed" && (!targetPaths.size || targetPaths.has(normalizeEvidencePath(file.path))));
-  const relatedFiles = allFiles.filter((file) => file.kind !== "changed");
-  const selected = [...changedFiles, ...relatedFiles].slice(0, 8);
-  return selected.length ? selected : allFiles.slice(0, 8);
+  const relatedFiles = allFiles.filter((file) => file.kind === "related");
+  const knowledgeFiles = allFiles.filter((file) => file.kind === "project-knowledge");
+  const otherFiles = allFiles.filter((file) => !["changed", "related", "project-knowledge"].includes(file.kind));
+  const selected = [
+    ...changedFiles,
+    ...relatedFiles,
+    ...knowledgeFiles.slice(0, REVIEW_KNOWLEDGE_PROMPT_FILE_LIMIT),
+    ...otherFiles
+  ].slice(0, REVIEW_EVIDENCE_PROMPT_FILE_LIMIT);
+  return selected.length ? selected : allFiles.slice(0, REVIEW_EVIDENCE_PROMPT_FILE_LIMIT);
 }
 
 function extractDiffFilePaths(diffText) {
@@ -608,7 +831,8 @@ function isReviewableDiffSection(section) {
 }
 
 function isSkippedReviewFile(path) {
-  return TEST_REVIEW_FILE_PATTERN.test(normalizeEvidencePath(path));
+  const normalizedPath = normalizeEvidencePath(path);
+  return TEST_REVIEW_FILE_PATTERN.test(normalizedPath) || MARKDOWN_REVIEW_FILE_PATTERN.test(normalizedPath);
 }
 
 function normalizeEvidencePath(value) {
@@ -700,7 +924,16 @@ function stripFindingMetadata(finding) {
     line: finding?.line ?? null,
     title: finding?.title || "",
     detail: finding?.detail || "",
-    suggestion: finding?.suggestion || ""
+    suggestion: finding?.suggestion || "",
+    evidence: normalizeFindingEvidence(finding?.evidence)
+  };
+}
+
+function stripFeedbackReviewResult(reviewed) {
+  return {
+    verdict: reviewed?.verdict || "",
+    response: reviewed?.response || "",
+    finding: reviewed?.finding ? stripFindingMetadata(reviewed.finding) : null
   };
 }
 
@@ -718,6 +951,15 @@ function isValidRawFinding(finding) {
       typeof finding.title === "string" &&
       finding.title.trim() &&
       typeof finding.detail === "string" &&
-      typeof finding.suggestion === "string"
+      typeof finding.suggestion === "string" &&
+      isValidFindingEvidence(finding.evidence)
+  );
+}
+
+function isValidFindingEvidence(evidence) {
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return false;
+
+  return ["changedCode", "triggerCondition", "dataFlow", "counterEvidenceChecked"].every(
+    (key) => typeof evidence[key] === "string" && evidence[key].trim()
   );
 }

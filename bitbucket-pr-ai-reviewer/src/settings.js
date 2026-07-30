@@ -4,8 +4,10 @@ export const DEFAULT_REVIEW_RULES = `Focus on actionable code review findings.
 Prioritize correctness bugs, behavioral regressions, missing tests for changed behavior, security risks, data loss risks, and performance problems.
 For frontend files such as JS, TS, TSX, Vue, CSS, and Less, also check state handling, rendering edge cases, accessibility, memoization, API contracts, and user-visible styling regressions.
 Avoid style-only nitpicks unless they affect maintainability or product behavior.
-Skip test-file diffs such as test.ts, *.test.ts, *.spec.ts, and files under test/tests/__tests__; do not produce findings for those files.
+Skip test-file diffs such as test.ts, *.test.ts, *.spec.ts, files under test/tests/__tests__, and .md documentation files; do not produce findings for those files.
+For JSON files, review only the changed added/removed entries in the diff. Do not infer issues from unchanged neighboring JSON keys or missing surrounding context.
 Do not report speculative findings based only on "may", "might", or "could". Each finding must explain the evidence from the current diff, such as the changed condition branch, data flow, call chain, API contract, state transition, or rendered result that creates a concrete failing path. If the evidence is insufficient, return no finding.
+For every finding, provide structured evidence: changed code evidence, trigger condition, data/call/state/component flow, and counter-evidence checked from source context before reporting.
 Return concrete file paths, line numbers when clear from the diff, and suggested fixes.
 Except for code snippets, file paths, identifiers, API names, component names, library names, command names, and other proper nouns, write all review text in UTF-8 Simplified Chinese.`;
 
@@ -17,7 +19,7 @@ const DEFAULTS = {
   deepseekApiKey: "",
   deepseekModel: "deepseek-v4-flash",
   maxDiffCharsPerChunk: 12000,
-  contextLines: 1000,
+  contextLines: 20,
   reviewRules: DEFAULT_REVIEW_RULES,
   ...LOCAL_DEFAULT_SETTINGS
 };
@@ -38,7 +40,7 @@ export function normalizeSettings(input = {}) {
     deepseekApiKey: trimOrDefault(input.deepseekApiKey, DEFAULTS.deepseekApiKey),
     deepseekModel: trimOrDefault(input.deepseekModel, DEFAULTS.deepseekModel),
     maxDiffCharsPerChunk: clampNumber(input.maxDiffCharsPerChunk, 4000, 50000, DEFAULTS.maxDiffCharsPerChunk),
-    contextLines: clampNumber(input.contextLines, 1000, 10000, DEFAULTS.contextLines),
+    contextLines: normalizeContextLines(input.contextLines),
     reviewRules: reviewRules || DEFAULT_REVIEW_RULES
   };
 }
@@ -70,4 +72,14 @@ function clampNumber(value, min, max, fallback) {
 
   if (!Number.isFinite(parsed)) return Math.max(min, Math.min(max, safeFallback));
   return Math.max(min, Math.min(max, parsed));
+}
+
+function normalizeContextLines(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return DEFAULTS.contextLines;
+
+  // Previous builds used 1000 as the minimum/default, which turns tiny diffs in large files into many review chunks.
+  if (parsed >= 1000) return DEFAULTS.contextLines;
+
+  return Math.max(0, Math.min(200, parsed));
 }

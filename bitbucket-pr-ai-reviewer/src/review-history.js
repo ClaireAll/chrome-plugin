@@ -1,5 +1,6 @@
 export const REVIEW_HISTORY_KEY = "bbai-review-history";
 export const MAX_REVIEW_HISTORY = 3;
+export const REVIEW_ENGINE_VERSION = "2026-07-29-evidence-v2";
 
 export function createReviewKey(pullRequest) {
   return [
@@ -18,6 +19,7 @@ export function createReviewRecord({ url, result, reviewedAt = new Date().toISOS
   return {
     id,
     reviewKey,
+    engineVersion: REVIEW_ENGINE_VERSION,
     reviewedAt,
     url,
     title: result?.pullRequestInfo?.title || `${result?.pullRequest?.repoSlug || "PR"}#${result?.pullRequest?.pullRequestId || ""}`,
@@ -29,14 +31,19 @@ export function createReviewRecord({ url, result, reviewedAt = new Date().toISOS
 
 export function updateReviewRecord(record, result, updatedAt = new Date().toISOString()) {
   const counts = countActiveFindings(result);
-
-  return {
+  const nextRecord = {
     ...record,
     updatedAt,
     urgentCount: counts.urgentCount,
     suggestionCount: counts.suggestionCount,
     result
   };
+
+  if (Object.prototype.hasOwnProperty.call(record || {}, "engineVersion")) {
+    nextRecord.engineVersion = record.engineVersion;
+  }
+
+  return nextRecord;
 }
 
 export function upsertReviewHistory(history, record, limit = MAX_REVIEW_HISTORY, preserveIds = []) {
@@ -58,6 +65,18 @@ export function findLatestReviewForPullRequest(history, pullRequest) {
   const reviewKey = createReviewKey(pullRequest);
 
   return (Array.isArray(history) ? history : []).find((record) => record?.reviewKey === reviewKey) || null;
+}
+
+export function decorateReviewRecord(record) {
+  if (!isValidRecord(record)) return record;
+  return {
+    ...record,
+    stale: isReviewRecordStale(record)
+  };
+}
+
+export function isReviewRecordStale(record) {
+  return record?.engineVersion !== REVIEW_ENGINE_VERSION;
 }
 
 function isValidRecord(record) {

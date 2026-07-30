@@ -51,10 +51,41 @@ const COMPONENT_FILE_LIMIT = 8;
 const COMPONENT_SOURCE_CHAR_LIMIT = 3000;
 const REVIEW_EVIDENCE_CHANGED_FILE_LIMIT = 10;
 const REVIEW_EVIDENCE_RELATED_FILE_LIMIT = 8;
+const REVIEW_KNOWLEDGE_SYMBOL_LIMIT = 14;
+const REVIEW_KNOWLEDGE_FILE_LIMIT = 6;
+const REVIEW_KNOWLEDGE_SCAN_FILE_LIMIT = 12;
 const REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT = 3600;
 const REVIEW_EVIDENCE_EXT_PATTERN = /\.(tsx|ts|jsx|js|vue|less|css)$/i;
 const REVIEW_EVIDENCE_TEST_FILE_PATTERN =
   /(^|\/)(__tests__|__test__|tests?|specs?)(\/|$)|(^|\/)(test|spec)\.(tsx?|jsx?|vue)$|\.(test|spec)\.(tsx?|jsx?|vue)$/i;
+const REVIEW_SYMBOL_STOP_WORDS = new Set([
+  "AbortSignal",
+  "Array",
+  "BI",
+  "Boolean",
+  "Date",
+  "Error",
+  "JSON",
+  "Map",
+  "Math",
+  "Number",
+  "Object",
+  "Promise",
+  "React",
+  "Set",
+  "String",
+  "console",
+  "describe",
+  "expect",
+  "false",
+  "function",
+  "i18nText",
+  "null",
+  "return",
+  "test",
+  "true",
+  "undefined"
+]);
 
 export async function fetchFineDesignComponentReferences(
   pullRequest,
@@ -113,7 +144,8 @@ export async function fetchReviewEvidenceContext(
   changedFiles,
   settings,
   progress = () => {},
-  signal
+  signal,
+  options = {}
 ) {
   const changedPaths = Array.from(new Set((changedFiles || []).map(normalizeChangePath).filter(isReviewEvidenceFile))).slice(
     0,
@@ -123,6 +155,7 @@ export async function fetchReviewEvidenceContext(
 
   const headers = createBitbucketHeaders(settings);
   const sourceRef = String(pullRequestInfo?.fromRef || "").trim();
+  const focusLineByPath = normalizeFocusLineByPath(options.focusLineByPath);
   const files = [];
 
   progress("正在读取变更文件源码上下文...");
@@ -130,16 +163,18 @@ export async function fetchReviewEvidenceContext(
     signal?.throwIfAborted();
     const source = await fetchPullRequestRepositoryFileText(pullRequest, headers, path, sourceRef, signal).catch(() => "");
     if (source.trim()) {
+      const focusLine = focusLineByPath.get(path);
       files.push({
         kind: "changed",
         path,
-        source: trimReviewEvidenceSource(source)
+        source: trimReviewEvidenceSource(source, focusLine)
       });
     }
   }
 
   try {
-    const relatedPaths = await findRelatedReviewEvidencePaths(pullRequest, headers, sourceRef, changedPaths, files, signal);
+    const repositoryFiles = await fetchReviewRepositoryFiles(pullRequest, headers, sourceRef, signal);
+    const relatedPaths = findRelatedReviewEvidencePaths(repositoryFiles, changedPaths, files);
     for (const path of relatedPaths) {
       signal?.throwIfAborted();
       const source = await fetchPullRequestRepositoryFileText(pullRequest, headers, path, sourceRef, signal).catch(() => "");
@@ -149,6 +184,41 @@ export async function fetchReviewEvidenceContext(
           path,
           source: trimReviewEvidenceSource(source)
         });
+      }
+    }
+
+    const symbols = extractProjectKnowledgeSymbols(options.diffText, files);
+    const knowledgeMatches = findProjectKnowledgeEvidenceMatches(repositoryFiles, changedPaths, relatedPaths, files, symbols);
+    const knowledgePaths = new Set(knowledgeMatches.map((match) => match.path));
+    let knowledgeFileCount = 0;
+    for (const match of knowledgeMatches) {
+      signal?.throwIfAborted();
+      const source = await fetchPullRequestRepositoryFileText(pullRequest, headers, match.path, sourceRef, signal).catch(() => "");
+      const snippet = formatSymbolSourceSnippets(source, match.symbols);
+      if (snippet.trim()) {
+        files.push({
+          kind: "project-knowledge",
+          path: match.path,
+          source: snippet
+        });
+        knowledgeFileCount += 1;
+      }
+    }
+
+    const scanCandidates = findProjectKnowledgeScanCandidates(repositoryFiles, changedPaths, relatedPaths, files, knowledgePaths);
+    for (const path of scanCandidates) {
+      if (knowledgeFileCount >= REVIEW_KNOWLEDGE_FILE_LIMIT) break;
+      signal?.throwIfAborted();
+      const source = await fetchPullRequestRepositoryFileText(pullRequest, headers, path, sourceRef, signal).catch(() => "");
+      const matchedSymbols = findSymbolsInSource(source, symbols);
+      const snippet = formatSymbolSourceSnippets(source, matchedSymbols);
+      if (snippet.trim()) {
+        files.push({
+          kind: "project-knowledge",
+          path,
+          source: snippet
+        });
+        knowledgeFileCount += 1;
       }
     }
   } catch (error) {
@@ -324,17 +394,20 @@ async function fetchPullRequestRepositoryFileText(pullRequest, headers, path, so
   return formatRepositoryFilePayload(await response.text(), response.headers.get("content-type") || "");
 }
 
-async function findRelatedReviewEvidencePaths(pullRequest, headers, sourceRef, changedPaths, changedSources, signal) {
+async function fetchReviewRepositoryFiles(pullRequest, headers, sourceRef, signal) {
   const fileUrl = new URL(
     `${pullRequest.origin}/rest/api/latest/projects/${encodeURIComponent(pullRequest.projectKey)}/repos/${encodeURIComponent(pullRequest.repoSlug)}/files`
   );
   fileUrl.searchParams.set("limit", "1000");
   if (sourceRef) fileUrl.searchParams.set("at", sourceRef);
 
-  const repositoryFiles = (await fetchAllPages(fileUrl.toString(), headers, "读取仓库文件列表失败", signal))
+  return (await fetchAllPages(fileUrl.toString(), headers, "读取仓库文件列表失败", signal))
     .map(formatRepositoryFilePath)
     .map(normalizeRepositoryPath)
     .filter(isReviewEvidenceFile);
+}
+
+function findRelatedReviewEvidencePaths(repositoryFiles, changedPaths, changedSources) {
   const repositoryFileSet = new Set(repositoryFiles);
   const changedPathSet = new Set(changedPaths);
   const related = [];
@@ -351,6 +424,224 @@ async function findRelatedReviewEvidencePaths(pullRequest, headers, sourceRef, c
   }
 
   return related.slice(0, REVIEW_EVIDENCE_RELATED_FILE_LIMIT);
+}
+
+function extractProjectKnowledgeSymbols(diffText, changedSources) {
+  const scores = new Map();
+  const addSymbol = (symbol, score) => {
+    const normalized = normalizeKnowledgeSymbol(symbol);
+    if (!normalized || REVIEW_SYMBOL_STOP_WORDS.has(normalized)) return;
+    scores.set(normalized, (scores.get(normalized) || 0) + score);
+  };
+  const changedLines = String(diffText || "")
+    .split("\n")
+    .filter((line) => /^[+-]/.test(line) && !line.startsWith("+++") && !line.startsWith("---"))
+    .map((line) => line.slice(1));
+  const sourceTexts = (Array.isArray(changedSources) ? changedSources : []).map((file) => file?.source || "");
+
+  for (const text of [...changedLines, ...sourceTexts]) {
+    collectSymbolsFromText(text, addSymbol);
+  }
+
+  return Array.from(scores.entries())
+    .map(([symbol, score]) => ({ symbol, score }))
+    .sort((left, right) => right.score - left.score || left.symbol.localeCompare(right.symbol))
+    .slice(0, REVIEW_KNOWLEDGE_SYMBOL_LIMIT);
+}
+
+function collectSymbolsFromText(text, addSymbol) {
+  const source = String(text || "");
+  const patterns = [
+    { pattern: /\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, score: 120 },
+    { pattern: /\b(?:export\s+)?(?:class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g, score: 110 },
+    { pattern: /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*[=:]/g, score: 90 },
+    { pattern: /<\/?([A-Z][A-Za-z0-9_$]*(?:\.[A-Z][A-Za-z0-9_$]*)?)\b/g, score: 80 },
+    { pattern: /\b(use[A-Z][A-Za-z0-9_$]*)\b/g, score: 75 },
+    { pattern: /\b([A-Za-z_$][\w$]*)\s*\(/g, score: 45 },
+    { pattern: /\b([A-Z][A-Za-z0-9_$]{2,})\b/g, score: 30 }
+  ];
+
+  for (const { pattern, score } of patterns) {
+    let match = pattern.exec(source);
+    while (match) {
+      addSymbol(match[1].split(".")[0], score);
+      match = pattern.exec(source);
+    }
+  }
+}
+
+function findProjectKnowledgeEvidenceMatches(repositoryFiles, changedPaths, relatedPaths, existingFiles, symbols) {
+  if (!Array.isArray(symbols) || !symbols.length) return [];
+
+  const existingPaths = new Set([
+    ...changedPaths,
+    ...relatedPaths,
+    ...(Array.isArray(existingFiles) ? existingFiles.map((file) => normalizeRepositoryPath(file?.path)) : [])
+  ]);
+  const scoredByPath = new Map();
+
+  for (const path of repositoryFiles) {
+    if (!path || existingPaths.has(path)) continue;
+
+    for (const symbol of symbols) {
+      const score = scoreProjectKnowledgePath(path, symbol.symbol, changedPaths);
+      if (score <= 0) continue;
+
+      const current = scoredByPath.get(path) || { path, score: 0, symbolScores: new Map() };
+      current.score += score + Math.min(symbol.score, 100);
+      current.symbolScores.set(symbol.symbol, Math.max(current.symbolScores.get(symbol.symbol) || 0, score));
+      scoredByPath.set(path, current);
+    }
+  }
+
+  return Array.from(scoredByPath.values())
+    .sort((left, right) => right.score - left.score || left.path.length - right.path.length)
+    .slice(0, REVIEW_KNOWLEDGE_FILE_LIMIT)
+    .map((item) => ({
+      path: item.path,
+      symbols: Array.from(item.symbolScores.entries())
+        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+        .map(([symbol]) => symbol)
+        .slice(0, 4)
+    }));
+}
+
+function findProjectKnowledgeScanCandidates(repositoryFiles, changedPaths, relatedPaths, existingFiles, knowledgePaths) {
+  const existingPaths = new Set([
+    ...changedPaths,
+    ...relatedPaths,
+    ...knowledgePaths,
+    ...(Array.isArray(existingFiles) ? existingFiles.map((file) => normalizeRepositoryPath(file?.path)) : [])
+  ]);
+
+  return repositoryFiles
+    .filter((path) => path && !existingPaths.has(path) && isNearChangedPath(path, changedPaths))
+    .map((path) => ({ path, score: scoreKnowledgeScanPath(path, changedPaths) }))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || left.path.length - right.path.length)
+    .slice(0, REVIEW_KNOWLEDGE_SCAN_FILE_LIMIT)
+    .map((item) => item.path);
+}
+
+function scoreKnowledgeScanPath(path, changedPaths) {
+  let score = isNearChangedPath(path, changedPaths) ? 80 : 0;
+  const fileName = normalizeRepositoryPath(path).split("/").pop() || "";
+  if (/(hook|hooks|component|components|model|service|constant|constants|type|types|util|utils|store|provider)/i.test(path)) score += 25;
+  if (/\.(tsx|vue)$/i.test(fileName)) score += 10;
+  if (/(index|types?|constants?|utils?)\.(tsx?|jsx?|vue)$/i.test(fileName)) score += 10;
+  if (/(^|\/)(stories?|demos?|mocks?|fixtures?)(\/|\.|$)/i.test(path)) score -= 60;
+  return Math.max(0, score);
+}
+
+function scoreProjectKnowledgePath(path, symbol, changedPaths) {
+  const normalizedPath = normalizeRepositoryPath(path);
+  const lowerPath = normalizedPath.toLowerCase();
+  const rawSymbol = String(symbol || "");
+  const lowerSymbol = rawSymbol.toLowerCase();
+  const dashedSymbol = rawSymbol.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+  const compactSymbol = lowerSymbol.replace(/[^a-z0-9]/g, "");
+  const compactPath = lowerPath.replace(/[^a-z0-9]/g, "");
+  const segments = lowerPath.split("/");
+  const fileName = segments.at(-1) || "";
+  const baseName = fileName.replace(/\.(tsx|jsx|ts|js|vue|less|css)$/, "");
+  let score = 0;
+
+  if (!lowerSymbol || lowerSymbol.length < 3) return 0;
+  if (baseName === lowerSymbol) score += 150;
+  if (baseName === "index" && segments.at(-2) === lowerSymbol) score += 135;
+  if (segments.includes(lowerSymbol)) score += 120;
+  if (lowerPath.includes(`/${lowerSymbol}/`)) score += 105;
+  if (lowerPath.includes(lowerSymbol)) score += 85;
+  if (dashedSymbol !== lowerSymbol && lowerPath.includes(dashedSymbol)) score += 75;
+  if (compactSymbol.length >= 6 && compactPath.includes(compactSymbol)) score += 65;
+  if (isNearChangedPath(normalizedPath, changedPaths)) score += 35;
+  if (/(\.tsx|\.vue)$/i.test(normalizedPath) && /^[A-Z]/.test(symbol)) score += 15;
+  if (/(^|\/)(stories?|demos?|mocks?|fixtures?)(\/|\.|$)/i.test(normalizedPath)) score -= 60;
+
+  return Math.max(0, score);
+}
+
+function isNearChangedPath(path, changedPaths) {
+  const pathRoot = getKnowledgeRoot(path);
+  return changedPaths.some((changedPath) => {
+    const changedRoot = getKnowledgeRoot(changedPath);
+    return pathRoot && changedRoot && pathRoot === changedRoot;
+  });
+}
+
+function getKnowledgeRoot(path) {
+  const segments = normalizeRepositoryPath(path).split("/").filter(Boolean);
+  if (segments.length >= 4 && segments[0] === "packages") return segments.slice(0, 4).join("/");
+  return segments.slice(0, 2).join("/");
+}
+
+function formatSymbolSourceSnippets(source, symbols) {
+  const text = String(source || "");
+  if (!text.trim() || !Array.isArray(symbols) || !symbols.length) return "";
+
+  const lines = text.split("\n");
+  const ranges = [];
+  for (const symbol of symbols) {
+    const lineIndex = findSymbolLineIndex(lines, symbol);
+    if (lineIndex < 0) continue;
+    ranges.push({
+      symbol,
+      start: Math.max(0, lineIndex - 12),
+      end: Math.min(lines.length - 1, lineIndex + 18),
+      lineIndex
+    });
+  }
+
+  if (!ranges.length) return "";
+
+  const snippets = [];
+  for (const range of ranges.slice(0, 3)) {
+    const numberedLines = lines.slice(range.start, range.end + 1).map((line, index) => {
+      const lineNumber = range.start + index + 1;
+      const marker = lineNumber === range.lineIndex + 1 ? ">" : " ";
+      return `${marker} ${String(lineNumber).padStart(4, " ")} | ${line}`;
+    });
+    snippets.push(`Symbol context for ${range.symbol}, lines ${range.start + 1}-${range.end + 1}:`, ...numberedLines);
+  }
+
+  const snippet = snippets.join("\n");
+  if (snippet.length <= REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT) return snippet;
+  return `${snippet.slice(0, REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT)}\n...`;
+}
+
+function findSymbolLineIndex(lines, symbol) {
+  const escaped = escapeRegExp(symbol);
+  const definitionPattern = new RegExp(`\\b(?:function|class|interface|type|enum|const|let|var)\\s+${escaped}\\b|\\b${escaped}\\s*[:=]\\s*`, "i");
+  let fallback = -1;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (definitionPattern.test(line)) return index;
+    if (fallback < 0 && new RegExp(`\\b${escaped}\\b`, "i").test(line)) fallback = index;
+  }
+
+  return fallback;
+}
+
+function findSymbolsInSource(source, symbols) {
+  const text = String(source || "");
+  if (!text.trim() || !Array.isArray(symbols)) return [];
+
+  return symbols
+    .map((item) => item?.symbol || item)
+    .filter((symbol) => symbol && new RegExp(`\\b${escapeRegExp(symbol)}\\b`, "i").test(text))
+    .slice(0, 4);
+}
+
+function normalizeKnowledgeSymbol(symbol) {
+  const value = String(symbol || "").trim();
+  if (!/^[A-Za-z_$][\w$]*$/.test(value)) return "";
+  if (value.length < 3 || value.length > 80) return "";
+  return value;
+}
+
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function addRelatedPathCandidates(target, repositoryFileSet, changedPathSet, candidates) {
@@ -438,10 +729,54 @@ function isReviewEvidenceFile(path) {
   );
 }
 
-function trimReviewEvidenceSource(source) {
-  const text = String(source || "").trim();
+function trimReviewEvidenceSource(source, focusLine) {
+  const rawText = String(source || "");
+  const targetLine = Number.parseInt(focusLine, 10);
+
+  if (Number.isFinite(targetLine) && targetLine > 0) {
+    return formatFocusedSourceSnippet(rawText, targetLine);
+  }
+
+  const text = rawText.trim();
   if (text.length <= REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT) return text;
   return `${text.slice(0, REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT)}\n...`;
+}
+
+function formatFocusedSourceSnippet(source, focusLine) {
+  const lines = String(source || "").split("\n");
+  const targetLine = Math.max(1, Math.min(focusLine, lines.length || focusLine));
+  let radius = 35;
+  let snippet = "";
+
+  do {
+    const startLine = Math.max(1, targetLine - radius);
+    const endLine = Math.min(lines.length, targetLine + radius);
+    const numberedLines = lines.slice(startLine - 1, endLine).map((line, index) => {
+      const lineNumber = startLine + index;
+      const marker = lineNumber === targetLine ? ">" : " ";
+      return `${marker} ${String(lineNumber).padStart(4, " ")} | ${line}`;
+    });
+    snippet = [`Focused source lines ${startLine}-${endLine} around line ${focusLine}:`, ...numberedLines].join("\n");
+    radius = Math.floor(radius / 2);
+  } while (snippet.length > REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT && radius >= 5);
+
+  if (snippet.length <= REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT) return snippet;
+  return `${snippet.slice(0, REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT)}\n...`;
+}
+
+function normalizeFocusLineByPath(input) {
+  const output = new Map();
+  if (!input || typeof input !== "object") return output;
+
+  for (const [path, line] of Object.entries(input)) {
+    const normalizedPath = normalizeChangePath(path);
+    const parsedLine = Number.parseInt(line, 10);
+    if (normalizedPath && Number.isFinite(parsedLine) && parsedLine > 0) {
+      output.set(normalizedPath, parsedLine);
+    }
+  }
+
+  return output;
 }
 
 function getDirectoryName(path) {

@@ -960,7 +960,7 @@
         state.restoredReviewId = response.currentReview.id;
         state.error = "";
         if (!state.loading && !state.findingFeedbackLoading) {
-          state.status = `已载入 ${formatTime(response.currentReview.reviewedAt)} 的评审记录。`;
+          state.status = formatReviewLoadedStatus(response.currentReview);
         }
       }
       render();
@@ -984,7 +984,7 @@
     state.error = "";
     resetFeedbackState();
     if (!state.loading) {
-      state.status = `已载入 ${formatTime(record.reviewedAt)} 的评审记录。`;
+      state.status = formatReviewLoadedStatus(record);
     }
     render();
   }
@@ -1034,6 +1034,11 @@
     if (state.error) return state.error;
     if (state.loading || state.findingFeedbackLoading) return state.status || "正在评审当前合并请求...";
     return state.status;
+  }
+
+  function formatReviewLoadedStatus(record) {
+    const suffix = record?.stale ? "，旧版规则，建议重新审查" : "";
+    return `已载入 ${formatTime(record?.reviewedAt)} 的评审记录${suffix}。`;
   }
 
   function resetFeedbackState({ includeLoading = false } = {}) {
@@ -1109,7 +1114,7 @@
                       <div class="bbai-settings-section-title"><span>03</span><strong>评审策略</strong></div>
                       <div class="bbai-settings-grid">
                         <label>单个片段最大字符数<input name="maxDiffCharsPerChunk" type="number" min="4000" max="50000" step="1000" value="${escapeHtml(settings.maxDiffCharsPerChunk)}"></label>
-                        <label>diff 上下文行数<input name="contextLines" type="number" min="1000" max="10000" step="100" value="${escapeHtml(settings.contextLines)}"></label>
+                        <label>diff 上下文行数<input name="contextLines" type="number" min="0" max="200" step="5" value="${escapeHtml(settings.contextLines)}"></label>
                       </div>
                       <label>评审规则<textarea name="reviewRules" rows="7" placeholder="填写额外评审关注点">${escapeHtml(settings.reviewRules)}</textarea></label>
                     </section>
@@ -1162,6 +1167,7 @@
           <strong title="${escapeHtml(record.title || "评审结果")}">${escapeHtml(record.title || "评审结果")}</strong>
           ${renderSummary(record.result)}
         </div>
+        ${record.stale ? renderStaleReviewNotice() : ""}
         <div class="bbai-detail-scroll">
           ${renderFindings(record.result)}
         </div>
@@ -1186,12 +1192,13 @@
   function renderHistoryItem(record) {
     const total = Number(record.urgentCount || 0) + Number(record.suggestionCount || 0);
     const isActive = record.id === state.restoredReviewId;
+    const staleLabel = record.stale ? " / 旧版规则" : "";
 
     return `
       <div class="bbai-history-entry">
         <button class="bbai-history-item ${isActive ? "bbai-history-item--active" : ""}" type="button" data-history-id="${escapeHtml(record.id)}">
           <span class="bbai-history-title">${escapeHtml(record.title || "评审结果")}</span>
-          <span class="bbai-history-meta">${escapeHtml(formatTime(record.reviewedAt))} / ${total} 条发现</span>
+          <span class="bbai-history-meta">${escapeHtml(formatTime(record.reviewedAt))} / ${total} 条发现${staleLabel}</span>
         </button>
         <button class="bbai-history-delete" type="button" data-history-delete-id="${escapeHtml(record.id)}" aria-label="删除这条评审记录">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1202,6 +1209,14 @@
             <path d="M14 11v6"></path>
           </svg>
         </button>
+      </div>
+    `;
+  }
+
+  function renderStaleReviewNotice() {
+    return `
+      <div class="bbai-stale-review">
+        这条评审由旧版规则生成，建议点击“开始评审”重新生成。
       </div>
     `;
   }
@@ -1217,7 +1232,7 @@
     return `
       <div class="bbai-summary">
         <div><strong>${changedFiles.length}</strong><span>文件</span></div>
-        <div><strong>${result.chunksReviewed}</strong><span>片段</span></div>
+        <div><strong>${result.chunksReviewed}</strong><span>AI分块</span></div>
         <div><strong>${urgent}</strong><span>紧急</span></div>
         <div><strong>${suggestions}</strong><span>建议</span></div>
       </div>
@@ -1274,10 +1289,37 @@
             </button>
           </div>
           <p>${escapeHtml(finding.detail)}</p>
+          ${renderFindingEvidence(finding.evidence)}
           <div class="bbai-fix">${escapeHtml(finding.suggestion)}</div>
           ${renderFeedbackRounds(finding.feedbackRounds)}
           ${feedbackOpen ? renderFindingFeedbackComposer(index, state.findingFeedbackLoading) : ""}
         </article>
+      </div>
+    `;
+  }
+
+  function renderFindingEvidence(evidence) {
+    const rows = [
+      ["改动证据", evidence?.changedCode],
+      ["触发条件", evidence?.triggerCondition],
+      ["调用链/数据流", evidence?.dataFlow],
+      ["反证检查", evidence?.counterEvidenceChecked]
+    ].filter(([, value]) => String(value || "").trim());
+
+    if (!rows.length) return "";
+
+    return `
+      <div class="bbai-finding-evidence" aria-label="代码依据">
+        ${rows
+          .map(
+            ([label, value]) => `
+              <div class="bbai-finding-evidence-row">
+                <span class="bbai-finding-evidence-label">${escapeHtml(label)}</span>
+                <span class="bbai-finding-evidence-text">${escapeHtml(value)}</span>
+              </div>
+            `
+          )
+          .join("")}
       </div>
     `;
   }

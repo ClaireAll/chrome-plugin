@@ -29,9 +29,9 @@
 - 认证方式：默认使用 `Bearer`；仅当 Bitbucket 实例要求时改用 `Basic`。
 - DeepSeek 地址：默认为 `https://api.deepseek.com`。
 - DeepSeek API Key：由扩展后台 Service Worker 直接用于调用 DeepSeek。
-- 模型：默认为 `deepseek-v4-flash`；如果账号使用其他 DeepSeek 兼容模型，请自行修改。
-- 每个分块的最大 diff 字符数：默认为 `12000`。
-- diff 上下文行数：默认为 `20`，用于给改动行补充邻近上下文；可在 `0` 到 `200` 之间调整。旧版本保存的 `1000` 以上配置会自动按新版默认值处理，避免一行改动在大文件中膨胀成大量 AI 分块。
+- 模型：默认为 `deepseek-v4-pro`；旧版本已保存的 `deepseek-v4-flash` 会在读取配置时自动迁移到 `deepseek-v4-pro`，如果账号使用其他 DeepSeek 兼容模型，请自行修改。
+- 每个分块的最大 diff 字符数：默认为 `8000`，审查运行时也会把旧的大配置收敛到不超过 `8000`。
+- diff 上下文行数：默认为 `8`，用于给改动行补充邻近上下文；可在 `0` 到 `8` 之间调整。旧版本保存的 `1000` 以上配置会自动按新版默认值处理，避免一行改动在大文件中膨胀成大量 AI 分块。
 - 审查规则：会追加到默认审查提示词中，可参考 `REVIEW_RULES.md` 中可直接复制的规则模板。
 
 不要使用 `git add -f` 强制添加 `local-default-settings.js`。仓库中只应提交密钥为空字符串的 `local-default-settings.example.js`。
@@ -93,8 +93,13 @@
 - Bitbucket 请求使用 Server/Data Center 风格的 REST 路径：`/rest/api/latest/projects/{projectKey}/repos/{repoSlug}/pull-requests/{id}`。
 - 审查前会根据 diff 和变更文件抽取函数、组件、hook、类型、常量等符号，并从当前仓库读取路径匹配的定义、调用或示例片段作为项目知识上下文。
 - 对 `fx-data-web` 和 `fine-design-biz` 的 PR，扩展会额外按需读取 `FX/fine-design` 中的组件源码片段，读取失败不会阻断本次审查。
-- DeepSeek 请求通过 `POST /chat/completions` 发起，并要求返回带结构化证据字段的 JSON。
-- 较大的 diff 会先拆分为多个分块，再逐块审查；超大单文件 diff 会过滤掉没有实际 `+/-` 改动的纯上下文分块。
+- DeepSeek 请求通过 `POST /chat/completions` 发起，并要求返回带结构化证据字段的 JSON；扩展不主动设置 `max_tokens` 输出上限，单次请求等待超过 5 分钟会停止并提示错误。
+- 每个 diff 分块等待 DeepSeek 返回期间会每 30 秒刷新一次进度，避免界面停留在旧状态看起来像卡死。
+- 每个 diff 分块默认只调用一次 DeepSeek，减少大 PR 的请求量，也避免候选问题在二次复核中被过度删除。
+- 单个 diff 分块请求失败时会记录失败片段并继续审查后续片段，最终保留已完成片段的结果。
+- 评审文案内置 human-writing 风格约束：像给 PR 作者留言一样写，保留 diff/context 支撑的事实，避免“建议确认”“需要注意”这类 AI 套话。
+- 评审结果默认展示“问题”和“建议”，代码依据折叠显示，减少证据字段直接堆在卡片里造成的阅读负担。
+- 较大的 diff 会先拆分为多个分块，再逐块审查；超大单文件 diff 会过滤掉没有实际 `+/-` 改动的纯上下文分块，并压缩源码参考片段以减少单次 DeepSeek 请求体积。
 - 默认审查规则重点关注正确性、行为回归、缺失测试、安全性、性能以及前端特有问题。
 
 ## 验证

@@ -1,6 +1,6 @@
 export const REVIEW_HISTORY_KEY = "bbai-review-history";
 export const MAX_REVIEW_HISTORY = 3;
-export const REVIEW_ENGINE_VERSION = "2026-07-29-evidence-v2";
+export const REVIEW_ENGINE_VERSION = "2026-08-11-human-readable-v4";
 
 export function createReviewKey(pullRequest) {
   return [

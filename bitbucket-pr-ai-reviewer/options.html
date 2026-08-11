@@ -75,7 +75,7 @@
             </label>
             <label>
               模型名称
-              <input name="deepseekModel" type="text" autocomplete="off" placeholder="deepseek-v4-flash">
+              <input name="deepseekModel" type="text" autocomplete="off" placeholder="deepseek-v4-pro">
             </label>
           </section>
 
@@ -90,11 +90,11 @@
             <div class="settings-grid">
               <label>
                 单个片段最大字符数
-                <input name="maxDiffCharsPerChunk" type="number" min="4000" max="50000" step="1000">
+                <input name="maxDiffCharsPerChunk" type="number" min="4000" max="8000" step="1000">
               </label>
               <label>
                 diff 上下文行数
-                <input name="contextLines" type="number" min="1000" max="10000" step="100">
+                <input name="contextLines" type="number" min="0" max="8" step="1">
               </label>
             </div>
             <label>

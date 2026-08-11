@@ -7,8 +7,8 @@ export const LOCAL_DEFAULT_SETTINGS = {
   bitbucketAuthScheme: "Bearer",
   deepseekBaseUrl: "https://api.deepseek.com",
   deepseekApiKey: "",
-  deepseekModel: "deepseek-v4-flash",
-  maxDiffCharsPerChunk: 12000,
-  contextLines: 1000,
+  deepseekModel: "deepseek-v4-pro",
+  maxDiffCharsPerChunk: 8000,
+  contextLines: 8,
   reviewRules: ""
 };

@@ -1,9 +1,14 @@
 import { DEFAULT_REVIEW_RULES } from "./settings.js";
 
 const ALLOWED_SEVERITIES = new Set(["urgent", "suggestion"]);
+const MAX_FINDINGS_PER_RESPONSE = 5;
 const REVIEW_EVIDENCE_PROMPT_FILE_LIMIT = 12;
 const REVIEW_KNOWLEDGE_PROMPT_FILE_LIMIT = 4;
 const OVERSIZED_DIFF_HEADER_RESERVE = 1200;
+const REVIEW_TITLE_MAX_CHARS = 60;
+const REVIEW_DETAIL_MAX_CHARS = 180;
+const REVIEW_SUGGESTION_MAX_CHARS = 160;
+const REVIEW_EVIDENCE_MAX_CHARS = 120;
 const TEST_REVIEW_FILE_PATTERN =
   /(^|\/)(__tests__|__test__|tests?|specs?)(\/|$)|(^|\/)(test|spec)\.(tsx?|jsx?|vue)$|\.(test|spec)\.(tsx?|jsx?|vue)$/i;
 const MARKDOWN_REVIEW_FILE_PATTERN = /\.md$/i;
@@ -30,29 +35,36 @@ export const REVIEW_RESPONSE_SCHEMA = {
             type: ["integer", "null"]
           },
           title: {
-            type: "string"
+            type: "string",
+            maxLength: REVIEW_TITLE_MAX_CHARS
           },
           detail: {
-            type: "string"
+            type: "string",
+            maxLength: REVIEW_DETAIL_MAX_CHARS
           },
           suggestion: {
-            type: "string"
+            type: "string",
+            maxLength: REVIEW_SUGGESTION_MAX_CHARS
           },
           evidence: {
             type: "object",
             additionalProperties: false,
             properties: {
               changedCode: {
-                type: "string"
+                type: "string",
+                maxLength: REVIEW_EVIDENCE_MAX_CHARS
               },
               triggerCondition: {
-                type: "string"
+                type: "string",
+                maxLength: REVIEW_EVIDENCE_MAX_CHARS
               },
               dataFlow: {
-                type: "string"
+                type: "string",
+                maxLength: REVIEW_EVIDENCE_MAX_CHARS
               },
               counterEvidenceChecked: {
-                type: "string"
+                type: "string",
+                maxLength: REVIEW_EVIDENCE_MAX_CHARS
               }
             },
             required: ["changedCode", "triggerCondition", "dataFlow", "counterEvidenceChecked"]
@@ -65,9 +77,9 @@ export const REVIEW_RESPONSE_SCHEMA = {
   required: ["findings"]
 };
 
-export function chunkDiff(diff, maxChars = 12000) {
+export function chunkDiff(diff, maxChars = 8000) {
   const text = String(diff || "").trim();
-  const size = Math.max(1, Number.parseInt(maxChars, 10) || 12000);
+  const size = Math.max(1, Number.parseInt(maxChars, 10) || 8000);
 
   if (!text) return [];
 
@@ -159,7 +171,9 @@ export function buildReviewPrompt({
       "不要审查 test.ts、*.test.ts、*.spec.ts、test/tests/__tests__ 目录下的测试文件改动，或 .md 文档改动，也不要为这些文件输出 finding。",
       "审查 .json 文件时只围绕本次增删的 key/value 判断，不要根据相邻未改动 JSON key 或缺少完整上下文推断问题。",
       "如果代码实现与提交目的不一致，或者 diff 中能推导出明确的新逻辑错误，请优先作为 urgent 输出。",
-      "减少“可能导致”“可能存在”这类猜测型 finding；每条 finding 必须说明由当前 diff 改动导致的触发条件、数据流、调用链、接口契约或状态流转依据。证据不足时返回空 findings。",
+      "减少“可能导致”“可能存在”这类猜测型 finding；当当前 diff 支撑明确风险路径时要输出 finding，例如条件分支、数据流、调用链、API/组件契约、状态流转、删除符号、残留引用或渲染结果冲突。",
+      "只有缺少改动代码依据，或已检查上下文反证该问题时，才返回空 findings；不要因为缺少完整运行日志或完整调用图就丢弃有 diff 依据的问题。",
+      `每个分块最多返回 ${MAX_FINDINGS_PER_RESPONSE} 条 findings；有 diff 依据的问题要输出，不要因为缺少完整运行现场就删掉。`,
       "",
       "Changed files:",
       files,
@@ -174,12 +188,26 @@ export function buildReviewPrompt({
       "",
       "Evidence requirements:",
       "- For every finding, fill evidence.changedCode with the exact changed branch, condition, assignment, call, prop, import, or deleted line that creates the issue.",
-      "- Fill evidence.triggerCondition with the runtime/user/data condition needed to hit the issue. If no concrete trigger can be named, drop the finding.",
-      "- Fill evidence.dataFlow with the call chain, state transition, prop flow, API contract, or component contract that proves the behavior.",
+      "- Fill evidence.triggerCondition with the runtime/user/data condition or changed-branch condition needed to hit the issue. If no trigger category can be named from the diff/context, drop the finding.",
+      "- Fill evidence.dataFlow with the call chain, state transition, prop flow, API contract, component contract, stale reference, or deleted-symbol path that supports the behavior.",
       "- Fill evidence.counterEvidenceChecked with the source/context checked before reporting, especially symbols, current definitions, related call sites, or component references that did not disprove the issue.",
       "",
+      "Clarity requirements:",
+      `- Return at most ${MAX_FINDINGS_PER_RESPONSE} findings.`,
+      "- title must say the user-visible or runtime problem, not an abstract review category.",
+      "- detail must be one plain sentence in this order: changed code -> trigger scenario -> concrete bad result.",
+      "- suggestion must be one plain sentence that says exactly what to change.",
+      "- Avoid vague words in title/detail such as 建议确认、可能存在、需要注意 unless the concrete trigger and result are also stated.",
+      "- each evidence field must be one short phrase or sentence; no paragraphs, bullet lists, or repeated explanation.",
+      "",
+      "Human-writing requirements:",
+      "- Write title, detail, and suggestion like a short PR comment to the author, not like a model reasoning trace.",
+      "- Preserve only facts supported by the diff/context; do not invent extra impact just to make the sentence smoother.",
+      "- Prefer concrete subjects and verbs, for example “这里把 X 改成 Y，Z 场景会...” instead of “存在一定风险” or “建议关注”.",
+      "- Do not repeat the same evidence in title, detail, and suggestion.",
+      "",
       "Return JSON exactly in this shape:",
-      '{"findings":[{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"evidence-backed reason","suggestion":"specific fix","evidence":{"changedCode":"changed code evidence","triggerCondition":"runtime trigger","dataFlow":"call/data/state/component contract proof","counterEvidenceChecked":"context checked before reporting"}}]}',
+      '{"findings":[{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"one-sentence problem summary","suggestion":"one-sentence fix","evidence":{"changedCode":"short changed-code proof","triggerCondition":"short trigger","dataFlow":"short flow proof","counterEvidenceChecked":"short counter-evidence checked"}}]}',
       "Use null for line when the line is unclear. Use an empty findings array when no issues are found.",
       "Output language rule: except code snippets, file paths, identifiers, API names, component names, library names, command names, and other proper nouns, write title, detail, suggestion, and evidence text in UTF-8 Simplified Chinese.",
       "",
@@ -238,18 +266,24 @@ export function buildFindingsVerificationPrompt({
       JSON.stringify(findings || [], null, 2),
       "",
       "Verification rules:",
-      "- Keep a finding only when the diff and context prove a concrete failing path.",
+      "- Keep a finding when the diff and context support a concrete risk path; do not require a full runtime reproduction or complete call graph.",
       "- Drop findings against test files such as test.ts, *.test.ts, *.spec.ts, files under test/tests/__tests__, and .md documentation files.",
       "- Revise title/detail/suggestion when needed so the detail cites the changed branch, data flow, call chain, API contract, state transition, or rendered result that proves the issue.",
-      "- Drop findings based only on possibility, missing project context, or generic best-practice preference.",
+      "- Drop findings based only on possibility, missing changed-code evidence, context that contradicts the issue, or generic best-practice preference.",
       "- Preserve filePath and line only when they are supported by the diff/context.",
+      `- Keep at most ${MAX_FINDINGS_PER_RESPONSE} findings and prefer urgent, evidence-backed issues.`,
       "",
       "Evidence requirements:",
       "- Each kept finding must have evidence.changedCode, evidence.triggerCondition, evidence.dataFlow, and evidence.counterEvidenceChecked.",
-      "- If any evidence field cannot be backed by the supplied diff/context, drop the finding instead of weakening it with speculative wording.",
+      "- Revise weak evidence fields using the supplied diff/context; drop the finding only when the changed code or trigger/data-flow path cannot be supported.",
+      "",
+      "Brevity requirements:",
+      "- detail must be one concise sentence that states the problem and direct evidence.",
+      "- suggestion must be one concise sentence.",
+      "- each evidence field must be one short phrase or sentence.",
       "",
       "Return JSON exactly in this shape:",
-      '{"findings":[{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"evidence-backed reason","suggestion":"specific fix","evidence":{"changedCode":"changed code evidence","triggerCondition":"runtime trigger","dataFlow":"call/data/state/component contract proof","counterEvidenceChecked":"context checked before reporting"}}]}',
+      '{"findings":[{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"one-sentence problem summary","suggestion":"one-sentence fix","evidence":{"changedCode":"short changed-code proof","triggerCondition":"short trigger","dataFlow":"short flow proof","counterEvidenceChecked":"short counter-evidence checked"}}]}',
       "Use an empty findings array when no candidate is sufficiently supported.",
       "Output language rule: except code snippets, file paths, identifiers, API names, component names, library names, command names, and other proper nouns, write title, detail, suggestion, and evidence text in UTF-8 Simplified Chinese.",
       "",
@@ -355,8 +389,14 @@ export function buildFindingFeedbackPrompt({
       "- confirmed/revised findings must include evidence.changedCode, evidence.triggerCondition, evidence.dataFlow, and evidence.counterEvidenceChecked.",
       "- If the evidence fields cannot be filled from the supplied diff/context after considering user feedback, return dismissed.",
       "",
+      "Brevity requirements:",
+      "- response must be one concise sentence.",
+      "- finding.detail must be one concise sentence.",
+      "- finding.suggestion must be one concise sentence.",
+      "- each evidence field must be one short phrase or sentence.",
+      "",
       "Return JSON exactly in this shape:",
-      '{"verdict":"confirmed|revised|dismissed","response":"复审说明","finding":{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"evidence-backed reason","suggestion":"specific fix","evidence":{"changedCode":"changed code evidence","triggerCondition":"runtime trigger","dataFlow":"call/data/state/component contract proof","counterEvidenceChecked":"context checked before reporting"}}}',
+      '{"verdict":"confirmed|revised|dismissed","response":"one-sentence response","finding":{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"one-sentence problem summary","suggestion":"one-sentence fix","evidence":{"changedCode":"short changed-code proof","triggerCondition":"short trigger","dataFlow":"short flow proof","counterEvidenceChecked":"short counter-evidence checked"}}}',
       "Use null for finding when verdict is dismissed. Use null for line when the line is unclear.",
       "Except code snippets, file paths, identifiers, API names, component names, library names, command names, and proper nouns, write response, finding text, and evidence text in UTF-8 Simplified Chinese.",
       "",
@@ -438,8 +478,14 @@ export function buildFindingFeedbackVerificationPrompt({
       "- confirmed/revised findings must include evidence.changedCode, evidence.triggerCondition, evidence.dataFlow, and evidence.counterEvidenceChecked.",
       "- If the evidence fields cannot be filled from the supplied diff/context after considering user feedback, return dismissed.",
       "",
+      "Brevity requirements:",
+      "- response must be one concise sentence.",
+      "- finding.detail must be one concise sentence.",
+      "- finding.suggestion must be one concise sentence.",
+      "- each evidence field must be one short phrase or sentence.",
+      "",
       "Return JSON exactly in this shape:",
-      '{"verdict":"confirmed|revised|dismissed","response":"复审说明","finding":{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"evidence-backed reason","suggestion":"specific fix","evidence":{"changedCode":"changed code evidence","triggerCondition":"runtime trigger","dataFlow":"call/data/state/component contract proof","counterEvidenceChecked":"context checked before reporting"}}}',
+      '{"verdict":"confirmed|revised|dismissed","response":"one-sentence response","finding":{"severity":"urgent|suggestion","filePath":"path/to/file","line":123,"title":"short title","detail":"one-sentence problem summary","suggestion":"one-sentence fix","evidence":{"changedCode":"short changed-code proof","triggerCondition":"short trigger","dataFlow":"short flow proof","counterEvidenceChecked":"short counter-evidence checked"}}}',
       "Use null for finding when verdict is dismissed. Use null for line when the line is unclear.",
       "Except code snippets, file paths, identifiers, API names, component names, library names, command names, and proper nouns, write response, finding text, and evidence text in UTF-8 Simplified Chinese.",
       "",
@@ -491,10 +537,6 @@ export function parseReviewResponse(text) {
       throw new Error("missing findings array");
     }
 
-    if (!input.findings.every(isValidRawFinding)) {
-      throw new Error("invalid finding shape");
-    }
-
     return normalizeFindings(input);
   } catch (error) {
     const preview = String(text || "").slice(0, 500);
@@ -516,10 +558,10 @@ export function parseFindingFeedbackResponse(text) {
       return { verdict, response, finding: null };
     }
 
-    if (!isValidRawFinding(input?.finding)) {
+    const finding = normalizeFindings([input?.finding])[0];
+    if (!finding) {
       throw new Error("missing valid finding");
     }
-    const finding = normalizeFindings([input.finding])[0];
 
     return { verdict, response, finding };
   } catch (error) {
@@ -547,9 +589,11 @@ export function normalizeFindings(input) {
   return rawFindings
     .map((finding) => {
       const severity = String(finding?.severity || "").toLowerCase();
-      const title = String(finding?.title || "").trim();
-      const detail = String(finding?.detail || "").trim();
-      const suggestion = String(finding?.suggestion || "").trim();
+      const title = normalizeBriefText(finding?.title, REVIEW_TITLE_MAX_CHARS);
+      const detail = normalizeBriefText(finding?.detail, REVIEW_DETAIL_MAX_CHARS, { firstSentenceOnly: true });
+      const suggestion = normalizeBriefText(finding?.suggestion, REVIEW_SUGGESTION_MAX_CHARS, {
+        firstSentenceOnly: true
+      });
       const filePath = String(finding?.filePath || finding?.path || "").trim();
       const parsedLine = Number.parseInt(finding?.line, 10);
       const evidence = normalizeFindingEvidence(finding?.evidence);
@@ -568,17 +612,52 @@ export function normalizeFindings(input) {
         evidence
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, MAX_FINDINGS_PER_RESPONSE);
 }
 
 function normalizeFindingEvidence(evidence) {
   const source = evidence && typeof evidence === "object" && !Array.isArray(evidence) ? evidence : {};
   return {
-    changedCode: String(source.changedCode || "").trim().slice(0, 1600),
-    triggerCondition: String(source.triggerCondition || "").trim().slice(0, 1600),
-    dataFlow: String(source.dataFlow || "").trim().slice(0, 1600),
-    counterEvidenceChecked: String(source.counterEvidenceChecked || "").trim().slice(0, 1600)
+    changedCode: normalizeBriefText(source.changedCode, REVIEW_EVIDENCE_MAX_CHARS, { firstSentenceOnly: true }),
+    triggerCondition: normalizeBriefText(source.triggerCondition, REVIEW_EVIDENCE_MAX_CHARS, { firstSentenceOnly: true }),
+    dataFlow: normalizeBriefText(source.dataFlow, REVIEW_EVIDENCE_MAX_CHARS, { firstSentenceOnly: true }),
+    counterEvidenceChecked: normalizeBriefText(source.counterEvidenceChecked, REVIEW_EVIDENCE_MAX_CHARS, {
+      firstSentenceOnly: true
+    })
   };
+}
+
+function normalizeBriefText(value, maxChars, { firstSentenceOnly = false } = {}) {
+  const compact = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  const text = firstSentenceOnly ? firstSentence(compact) : compact;
+  return limitCharacters(cleanReviewText(text), maxChars);
+}
+
+function cleanReviewText(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^(需要注意的是|值得注意的是|从代码来看|根据 diff 可以看出|根据变更可以看出)[，,:：\s]*/i, "")
+    .replace(/^(建议确认|建议检查|建议关注)[，,:：\s]*/i, "")
+    .replace(/\s*(?:因此)?建议开发者\s*/g, "建议")
+    .replace(/\s*(?:因此)?建议\s+/, "建议");
+}
+
+function firstSentence(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+
+  const match = value.match(/^[\s\S]*?[。！？!?]/);
+  return (match?.[0] || value.split(/\n+/)[0] || value).trim();
+}
+
+function limitCharacters(value, maxChars) {
+  const characters = Array.from(String(value || "").trim());
+  const limit = Math.max(1, Number.parseInt(maxChars, 10) || 1);
+  if (characters.length <= limit) return characters.join("");
+  return `${characters.slice(0, Math.max(1, limit - 1)).join("")}…`;
 }
 
 export function mergeFindings(chunks) {
@@ -935,31 +1014,4 @@ function stripFeedbackReviewResult(reviewed) {
     response: reviewed?.response || "",
     finding: reviewed?.finding ? stripFindingMetadata(reviewed.finding) : null
   };
-}
-
-function isValidRawFinding(finding) {
-  const severity = String(finding?.severity || "").toLowerCase();
-  const line = finding?.line;
-
-  return Boolean(
-    finding &&
-      typeof finding === "object" &&
-      !Array.isArray(finding) &&
-      ALLOWED_SEVERITIES.has(severity) &&
-      typeof finding.filePath === "string" &&
-      (line === null || (Number.isInteger(line) && line > 0)) &&
-      typeof finding.title === "string" &&
-      finding.title.trim() &&
-      typeof finding.detail === "string" &&
-      typeof finding.suggestion === "string" &&
-      isValidFindingEvidence(finding.evidence)
-  );
-}
-
-function isValidFindingEvidence(evidence) {
-  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return false;
-
-  return ["changedCode", "triggerCondition", "dataFlow", "counterEvidenceChecked"].every(
-    (key) => typeof evidence[key] === "string" && evidence[key].trim()
-  );
 }

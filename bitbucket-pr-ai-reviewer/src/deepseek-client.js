@@ -1,5 +1,4 @@
 import {
-  buildFindingsVerificationPrompt,
   buildFindingFeedbackVerificationPrompt,
   buildFindingFeedbackPrompt,
   buildReviewPrompt,
@@ -12,6 +11,7 @@ import {
 } from "./review-engine.js";
 import "./image-attachments.js";
 
+const DEEPSEEK_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 const ImageAttachments = globalThis.BitbucketPrAiReviewerImages;
 
 export async function reviewDiffChunk({
@@ -29,8 +29,10 @@ export async function reviewDiffChunk({
   previousFindings = [],
   visualEvidence = "",
   fineDesignReference,
+  progress,
   signal
 }) {
+  progress?.("审查");
   const prompt = buildReviewPrompt({
     pullRequest,
     pullRequestInfo,
@@ -48,39 +50,11 @@ export async function reviewDiffChunk({
     fineDesignReference
   });
 
-  const { value: candidateFindings, rawText } = await requestStructuredCompletion(settings, prompt, parseReviewResponse, { signal });
-  if (!candidateFindings.length) {
-    return {
-      findings: [],
-      rawText
-    };
-  }
-
-  let verifiedFindings = candidateFindings;
-  let verificationRawText = "";
-  try {
-    const verificationPrompt = buildFindingsVerificationPrompt({
-      pullRequest,
-      pullRequestInfo,
-      commits,
-      changedFiles,
-      diffChunk,
-      reviewRules: settings.reviewRules,
-      evidenceContext,
-      findings: candidateFindings,
-      fineDesignReference
-    });
-    const verified = await requestStructuredCompletion(settings, verificationPrompt, parseReviewResponse, { signal });
-    verifiedFindings = verified.value;
-    verificationRawText = verified.rawText;
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    verificationRawText = `verification skipped: ${error.message || String(error)}`;
-  }
+  const { value: findings, rawText } = await requestStructuredCompletion(settings, prompt, parseReviewResponse, { signal });
 
   return {
-    findings: verifiedFindings,
-    rawText: `${rawText}\n\n[verification]\n${verificationRawText}`
+    findings,
+    rawText
   };
 }
 
@@ -169,7 +143,6 @@ export function buildChatCompletionBody(settings, prompt, images = []) {
       }
     ],
     temperature: 0.1,
-    max_tokens: 8192,
     response_format: {
       type: "json_object"
     }
@@ -177,27 +150,38 @@ export function buildChatCompletionBody(settings, prompt, images = []) {
 }
 
 async function requestJsonCompletion(settings, prompt, { images = [], signal } = {}) {
-  const response = await fetch(`${settings.deepseekBaseUrl}/chat/completions`, {
-    method: "POST",
-    signal,
-    headers: {
-      Authorization: `Bearer ${settings.deepseekApiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(buildChatCompletionBody(settings, prompt, images))
-  });
+  const requestSignal = createTimeoutSignal(signal, DEEPSEEK_REQUEST_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw new Error(await formatDeepSeekError(response, images.length > 0));
+  try {
+    const response = await fetch(`${settings.deepseekBaseUrl}/chat/completions`, {
+      method: "POST",
+      signal: requestSignal.signal,
+      headers: {
+        Authorization: `Bearer ${settings.deepseekApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(buildChatCompletionBody(settings, prompt, images))
+    });
+
+    if (!response.ok) {
+      throw new Error(await formatDeepSeekError(response, images.length > 0));
+    }
+
+    const payload = await response.json();
+    const text = extractChatCompletionText(payload) || extractResponseText(payload);
+    if (text) return text;
+
+    const finishReason = payload?.choices?.[0]?.finish_reason;
+    const reason = finishReason ? `，finish_reason=${finishReason}` : "";
+    throw new Error(`DeepSeek 未返回评审内容${reason}。`);
+  } catch (error) {
+    if (requestSignal.timedOut()) {
+      throw new Error(`DeepSeek 请求超过 ${formatDuration(DEEPSEEK_REQUEST_TIMEOUT_MS)} 未返回，已停止等待。`);
+    }
+    throw error;
+  } finally {
+    requestSignal.cleanup();
   }
-
-  const payload = await response.json();
-  const text = extractChatCompletionText(payload) || extractResponseText(payload);
-  if (text) return text;
-
-  const finishReason = payload?.choices?.[0]?.finish_reason;
-  const reason = finishReason ? `，finish_reason=${finishReason}` : "";
-  throw new Error(`DeepSeek 未返回评审内容${reason}。`);
 }
 
 async function requestStructuredCompletion(settings, prompt, parser, options = {}) {
@@ -219,6 +203,44 @@ async function requestStructuredCompletion(settings, prompt, parser, options = {
 
 function isRetryableStructuredResponseError(error) {
   return /DeepSeek (?:未返回|返回的.*JSON 格式异常)/.test(String(error?.message || error));
+}
+
+function createTimeoutSignal(sourceSignal, timeoutMs) {
+  const controller = new AbortController();
+  let didTimeOut = false;
+  const timeoutId = setTimeout(() => {
+    didTimeOut = true;
+    controller.abort(new DOMException("DeepSeek 请求超时。", "TimeoutError"));
+  }, timeoutMs);
+  const abortFromSource = () => {
+    controller.abort(sourceSignal?.reason || new DOMException("评审请求已取消。", "AbortError"));
+  };
+
+  if (sourceSignal?.aborted) {
+    abortFromSource();
+  } else {
+    sourceSignal?.addEventListener("abort", abortFromSource, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timeoutId);
+      sourceSignal?.removeEventListener("abort", abortFromSource);
+    },
+    timedOut() {
+      return didTimeOut;
+    }
+  };
+}
+
+function formatDuration(ms) {
+  const seconds = Math.max(1, Math.round(Number(ms || 0) / 1000));
+  if (seconds < 60) return `${seconds} 秒`;
+
+  const minutes = Math.floor(seconds / 60);
+  const restSeconds = seconds % 60;
+  return restSeconds ? `${minutes} 分 ${restSeconds} 秒` : `${minutes} 分钟`;
 }
 
 async function formatDeepSeekError(response, hasImages = false) {

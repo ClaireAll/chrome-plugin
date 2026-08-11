@@ -16,6 +16,9 @@ import { parsePullRequestUrl } from "./url.js";
 
 let historyMutationQueue = Promise.resolve();
 const activeRequests = new Map();
+const REVIEW_WAIT_HEARTBEAT_MS = 30 * 1000;
+const REVIEW_DIFF_CHUNK_CHAR_LIMIT = 8000;
+const REVIEW_DIFF_CONTEXT_LINE_LIMIT = 8;
 const ImageAttachments = globalThis.BitbucketPrAiReviewerImages;
 
 chrome.action.onClicked.addListener((tab) => {
@@ -89,6 +92,7 @@ async function reviewCurrentPullRequest(
   { feedback = "", baseReviewId = "", requestId = "", images = [], feedbackContext = [], signal } = {}
 ) {
   const settings = validateSettings(await loadSettings());
+  const reviewSettings = shrinkReviewSettings(settings);
   const pullRequest = parsePullRequestUrl(url);
   const progress = (status) => notifyProgress(tabId, status, { requestId, url });
   const normalizedFeedback = normalizeFeedback(feedback);
@@ -101,9 +105,14 @@ async function reviewCurrentPullRequest(
   const previousFindings = (baseRecord?.result?.findings || []).filter((finding) => finding?.reviewStatus !== "dismissed");
 
   progress(normalizedFeedback ? "正在根据补充反馈重新读取合并请求..." : "正在读取合并请求元数据...");
-  const { pullRequestInfo, commits, changedFiles, diffText } = await fetchPullRequestDiff(pullRequest, settings, progress, signal);
+  const { pullRequestInfo, commits, changedFiles, diffText } = await fetchPullRequestDiff(
+    pullRequest,
+    reviewSettings,
+    progress,
+    signal
+  );
   signal?.throwIfAborted();
-  const chunks = chunkDiff(diffText, settings.maxDiffCharsPerChunk);
+  const chunks = chunkDiff(diffText, reviewSettings.maxDiffCharsPerChunk);
 
   if (!chunks.length) {
     progress("本次 PR 只有测试或 Markdown 文件改动，已跳过代码审查。");
@@ -131,13 +140,13 @@ async function reviewCurrentPullRequest(
   }
 
   const reviewDiffText = chunks.join("\n\n");
-  const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, settings, reviewDiffText, progress, signal);
+  const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, reviewSettings, reviewDiffText, progress, signal);
   signal?.throwIfAborted();
   const reviewEvidenceContext = await fetchReviewEvidenceContext(
     pullRequest,
     pullRequestInfo,
     changedFiles,
-    settings,
+    reviewSettings,
     progress,
     signal,
     { diffText: reviewDiffText }
@@ -148,7 +157,7 @@ async function reviewCurrentPullRequest(
   if (normalizedImages.length) {
     progress("正在提取图片中的视觉证据...");
     visualEvidence = await extractVisualEvidence({
-      settings,
+      settings: reviewSettings,
       feedback: normalizedFeedback,
       images: normalizedImages,
       signal
@@ -156,39 +165,61 @@ async function reviewCurrentPullRequest(
   }
 
   const reviewedChunks = [];
+  const failedChunks = [];
   for (let index = 0; index < chunks.length; index += 1) {
     signal?.throwIfAborted();
-    progress(`正在评审第 ${index + 1}/${chunks.length} 个 diff 片段...`);
-    reviewedChunks.push(
-      await reviewDiffChunk({
-        settings,
-        pullRequest,
-        pullRequestInfo,
-        commits,
-        changedFiles,
-        diffChunk: chunks[index],
-        chunkIndex: index,
-        totalChunks: chunks.length,
-        evidenceContext: reviewEvidenceContext,
-        followUpFeedback: normalizedFeedback,
-        followUpFeedbackContext: normalizedFeedbackContext,
-        previousFindings,
-        visualEvidence,
-        fineDesignReference,
-        signal
-      })
-    );
+    let chunkPhase = "审查";
+    const updateChunkPhase = (phase) => {
+      chunkPhase = phase || chunkPhase;
+      progress(`正在${chunkPhase}第 ${index + 1}/${chunks.length} 个 diff 片段...`);
+    };
+    updateChunkPhase(chunkPhase);
+    try {
+      reviewedChunks.push(
+        await withProgressHeartbeat(
+          () =>
+            reviewDiffChunk({
+              settings: reviewSettings,
+              pullRequest,
+              pullRequestInfo,
+              commits,
+              changedFiles,
+              diffChunk: chunks[index],
+              chunkIndex: index,
+              totalChunks: chunks.length,
+              evidenceContext: reviewEvidenceContext,
+              followUpFeedback: normalizedFeedback,
+              followUpFeedbackContext: normalizedFeedbackContext,
+              previousFindings,
+              visualEvidence,
+              fineDesignReference,
+              progress: updateChunkPhase,
+              signal
+            }),
+          (elapsedMs) =>
+            `正在等待 DeepSeek ${chunkPhase}第 ${index + 1}/${chunks.length} 个 diff 片段（已等待 ${formatDuration(elapsedMs)}）...`,
+          progress,
+          signal
+        )
+      );
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      failedChunks.push(createFailedChunk(index, chunks.length, chunks[index], error));
+      progress(`第 ${index + 1}/${chunks.length} 个 diff 片段失败，已继续审查后续片段。`);
+    }
   }
 
   const findings = mergeFindings(reviewedChunks);
-  progress("评审完成。");
+  progress(formatReviewCompleteStatus(chunks.length, failedChunks.length));
 
   const result = {
     pullRequest,
     pullRequestInfo,
     commits,
     changedFiles,
-    chunksReviewed: chunks.length,
+    chunksReviewed: reviewedChunks.length,
+    chunksTotal: chunks.length,
+    failedChunks,
     findings,
     ...(normalizedFeedback
       ? {
@@ -223,6 +254,7 @@ async function reviewFindingWithFeedback({
   const normalizedCategory = normalizeCategory(category);
   const normalizedImages = ImageAttachments.normalizeImagePayloads(images);
   const settings = validateSettings(await loadSettings());
+  const reviewSettings = shrinkReviewSettings(settings);
   const pullRequest = parsePullRequestUrl(url);
   const history = await loadStableReviewHistory();
   const record = history.find((item) => item?.id === reviewId);
@@ -246,14 +278,19 @@ async function reviewFindingWithFeedback({
   const recordRevision = String(record.updatedAt || record.reviewedAt || "");
   const progress = (status) => notifyProgress(tabId, status, { requestId, url });
   progress("正在重新读取这条意见对应的代码...");
-  const { pullRequestInfo, commits, changedFiles, diffText } = await fetchPullRequestDiff(pullRequest, settings, progress, signal);
+  const { pullRequestInfo, commits, changedFiles, diffText } = await fetchPullRequestDiff(
+    pullRequest,
+    reviewSettings,
+    progress,
+    signal
+  );
   signal?.throwIfAborted();
-  const relevantDiff = selectRelevantDiff(diffText, finding.filePath, finding.line, settings.maxDiffCharsPerChunk);
+  const relevantDiff = selectRelevantDiff(diffText, finding.filePath, finding.line, reviewSettings.maxDiffCharsPerChunk);
   const reviewEvidenceContext = await fetchReviewEvidenceContext(
     pullRequest,
     pullRequestInfo,
     [finding.filePath],
-    settings,
+    reviewSettings,
     progress,
     signal,
     {
@@ -262,12 +299,12 @@ async function reviewFindingWithFeedback({
     }
   );
   signal?.throwIfAborted();
-  const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, settings, relevantDiff, progress, signal);
+  const fineDesignReference = await fetchFineDesignComponentReferences(pullRequest, reviewSettings, relevantDiff, progress, signal);
   signal?.throwIfAborted();
 
   progress("AI 正在重新审查这条意见...");
   const reviewed = await reviewFindingFeedback({
-    settings,
+    settings: reviewSettings,
     pullRequest,
     pullRequestInfo,
     commits,
@@ -352,11 +389,92 @@ async function saveSettings(input) {
   return settings;
 }
 
+function shrinkReviewSettings(settings) {
+  const maxDiffCharsPerChunk = Number.parseInt(settings?.maxDiffCharsPerChunk, 10);
+  const contextLines = Number.parseInt(settings?.contextLines, 10);
+
+  return {
+    ...settings,
+    maxDiffCharsPerChunk: Math.min(
+      REVIEW_DIFF_CHUNK_CHAR_LIMIT,
+      Math.max(4000, Number.isFinite(maxDiffCharsPerChunk) ? maxDiffCharsPerChunk : REVIEW_DIFF_CHUNK_CHAR_LIMIT)
+    ),
+    contextLines: Math.min(
+      REVIEW_DIFF_CONTEXT_LINE_LIMIT,
+      Math.max(0, Number.isFinite(contextLines) ? contextLines : REVIEW_DIFF_CONTEXT_LINE_LIMIT)
+    )
+  };
+}
+
+function createFailedChunk(index, totalChunks, diffChunk, error) {
+  return {
+    chunkIndex: index,
+    totalChunks,
+    filePaths: extractDiffChunkFilePaths(diffChunk).slice(0, 5),
+    error: formatReviewError(error)
+  };
+}
+
+function extractDiffChunkFilePaths(diffChunk) {
+  const paths = new Set();
+  const pattern = /^diff --git a\/(.+?) b\/(.+)$/gm;
+  let match = pattern.exec(String(diffChunk || ""));
+
+  while (match) {
+    paths.add(normalizeDiffPath(match[1]));
+    paths.add(normalizeDiffPath(match[2]));
+    match = pattern.exec(String(diffChunk || ""));
+  }
+
+  return Array.from(paths).filter(Boolean);
+}
+
+function normalizeDiffPath(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
+}
+
+function formatReviewError(error) {
+  return String(error?.message || error || "未知错误").trim();
+}
+
+function formatReviewCompleteStatus(totalChunks, failedCount) {
+  if (failedCount > 0) {
+    return `评审完成，但 ${failedCount}/${totalChunks} 个 diff 片段失败。`;
+  }
+  return "评审完成。";
+}
+
 function notifyProgress(tabId, status, { requestId = "", url = "" } = {}) {
   const activeRequest = activeRequests.get(String(requestId || ""));
   if (activeRequest) activeRequest.status = status;
   if (!tabId) return;
   chrome.tabs.sendMessage(tabId, { type: "review-progress", status, requestId, url }).catch(() => {});
+}
+
+function withProgressHeartbeat(operation, createStatus, progress, signal, intervalMs = REVIEW_WAIT_HEARTBEAT_MS) {
+  const startedAt = Date.now();
+  const timer = setInterval(() => {
+    if (!signal?.aborted) {
+      progress(createStatus(Date.now() - startedAt));
+    }
+  }, intervalMs);
+
+  return Promise.resolve()
+    .then(operation)
+    .finally(() => clearInterval(timer));
+}
+
+function formatDuration(ms) {
+  const seconds = Math.max(1, Math.round(Number(ms || 0) / 1000));
+  if (seconds < 60) return `${seconds} 秒`;
+
+  const minutes = Math.floor(seconds / 60);
+  const restSeconds = seconds % 60;
+  return restSeconds ? `${minutes} 分 ${restSeconds} 秒` : `${minutes} 分钟`;
 }
 
 async function getReviewHistory(url) {

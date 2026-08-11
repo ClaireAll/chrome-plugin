@@ -47,14 +47,14 @@ const FINE_DESIGN_PROJECT_KEY = "FX";
 const FINE_DESIGN_REPO_SLUG = "fine-design";
 const FINE_DESIGN_REVIEW_REPOS = new Set(["fx-data-web", "fine-design-biz"]);
 const COMPONENT_NAME_LIMIT = 12;
-const COMPONENT_FILE_LIMIT = 8;
-const COMPONENT_SOURCE_CHAR_LIMIT = 3000;
-const REVIEW_EVIDENCE_CHANGED_FILE_LIMIT = 10;
-const REVIEW_EVIDENCE_RELATED_FILE_LIMIT = 8;
-const REVIEW_KNOWLEDGE_SYMBOL_LIMIT = 14;
-const REVIEW_KNOWLEDGE_FILE_LIMIT = 6;
-const REVIEW_KNOWLEDGE_SCAN_FILE_LIMIT = 12;
-const REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT = 3600;
+const COMPONENT_FILE_LIMIT = 5;
+const COMPONENT_SOURCE_CHAR_LIMIT = 2000;
+const REVIEW_EVIDENCE_CHANGED_FILE_LIMIT = 8;
+const REVIEW_EVIDENCE_RELATED_FILE_LIMIT = 5;
+const REVIEW_KNOWLEDGE_SYMBOL_LIMIT = 10;
+const REVIEW_KNOWLEDGE_FILE_LIMIT = 4;
+const REVIEW_KNOWLEDGE_SCAN_FILE_LIMIT = 8;
+const REVIEW_EVIDENCE_SOURCE_CHAR_LIMIT = 2400;
 const REVIEW_EVIDENCE_EXT_PATTERN = /\.(tsx|ts|jsx|js|vue|less|css)$/i;
 const REVIEW_EVIDENCE_TEST_FILE_PATTERN =
   /(^|\/)(__tests__|__test__|tests?|specs?)(\/|$)|(^|\/)(test|spec)\.(tsx?|jsx?|vue)$|\.(test|spec)\.(tsx?|jsx?|vue)$/i;
@@ -745,7 +745,7 @@ function trimReviewEvidenceSource(source, focusLine) {
 function formatFocusedSourceSnippet(source, focusLine) {
   const lines = String(source || "").split("\n");
   const targetLine = Math.max(1, Math.min(focusLine, lines.length || focusLine));
-  let radius = 35;
+  let radius = 20;
   let snippet = "";
 
   do {

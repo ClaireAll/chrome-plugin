@@ -1105,7 +1105,7 @@
                       <div class="bbai-settings-section-title"><span>02</span><strong>DeepSeek 模型</strong></div>
                       <div class="bbai-settings-grid">
                         <label>服务地址<input name="deepseekBaseUrl" type="url" autocomplete="off" value="${escapeHtml(settings.deepseekBaseUrl)}" placeholder="https://api.deepseek.com"></label>
-                        <label>模型名称<input name="deepseekModel" type="text" autocomplete="off" value="${escapeHtml(settings.deepseekModel)}" placeholder="deepseek-v4-flash"></label>
+                        <label>模型名称<input name="deepseekModel" type="text" autocomplete="off" value="${escapeHtml(settings.deepseekModel)}" placeholder="deepseek-v4-pro"></label>
                       </div>
                       <label>API 密钥<input name="deepseekApiKey" type="password" autocomplete="off" value="${escapeHtml(settings.deepseekApiKey)}" placeholder="请输入 DeepSeek API Key"></label>
                     </section>
@@ -1113,8 +1113,8 @@
                     <section class="bbai-settings-section">
                       <div class="bbai-settings-section-title"><span>03</span><strong>评审策略</strong></div>
                       <div class="bbai-settings-grid">
-                        <label>单个片段最大字符数<input name="maxDiffCharsPerChunk" type="number" min="4000" max="50000" step="1000" value="${escapeHtml(settings.maxDiffCharsPerChunk)}"></label>
-                        <label>diff 上下文行数<input name="contextLines" type="number" min="0" max="200" step="5" value="${escapeHtml(settings.contextLines)}"></label>
+                        <label>单个片段最大字符数<input name="maxDiffCharsPerChunk" type="number" min="4000" max="8000" step="1000" value="${escapeHtml(settings.maxDiffCharsPerChunk)}"></label>
+                        <label>diff 上下文行数<input name="contextLines" type="number" min="0" max="8" step="1" value="${escapeHtml(settings.contextLines)}"></label>
                       </div>
                       <label>评审规则<textarea name="reviewRules" rows="7" placeholder="填写额外评审关注点">${escapeHtml(settings.reviewRules)}</textarea></label>
                     </section>
@@ -1228,11 +1228,14 @@
     const changedFiles = Array.isArray(result.changedFiles) ? result.changedFiles : [];
     const urgent = findings.filter((finding) => finding.severity === "urgent").length;
     const suggestions = findings.filter((finding) => finding.severity === "suggestion").length;
+    const chunksReviewed = Number(result.chunksReviewed || 0);
+    const chunksTotal = Number(result.chunksTotal || result.chunksReviewed || 0);
+    const chunkText = chunksTotal && chunksReviewed !== chunksTotal ? `${chunksReviewed}/${chunksTotal}` : String(chunksReviewed);
 
     return `
       <div class="bbai-summary">
         <div><strong>${changedFiles.length}</strong><span>文件</span></div>
-        <div><strong>${result.chunksReviewed}</strong><span>AI分块</span></div>
+        <div><strong>${escapeHtml(chunkText)}</strong><span>AI分块</span></div>
         <div><strong>${urgent}</strong><span>紧急</span></div>
         <div><strong>${suggestions}</strong><span>建议</span></div>
       </div>
@@ -1242,11 +1245,15 @@
   function renderFindings(result = state.result) {
     if (!result) return "";
     const findings = Array.isArray(result.findings) ? result.findings : [];
+    const warnings = renderReviewWarnings(result);
     if (!findings.length) {
-      return `<div class="bbai-empty">没有发现问题。</div>`;
+      return `${warnings}<div class="bbai-empty">${
+        getFailedChunks(result).length ? "已完成的片段未发现问题；失败片段建议稍后重试。" : "没有发现问题。"
+      }</div>`;
     }
 
     return `
+      ${warnings}
       <div class="bbai-findings">
         ${findings.map((finding, index) => renderFinding(finding, index)).join("")}
       </div>
@@ -1288,9 +1295,9 @@
               <span>${feedbackOpen ? "收起反馈" : "反馈给 AI"}</span>
             </button>
           </div>
-          <p>${escapeHtml(finding.detail)}</p>
+          <p class="bbai-finding-detail"><span>问题</span>${escapeHtml(finding.detail)}</p>
           ${renderFindingEvidence(finding.evidence)}
-          <div class="bbai-fix">${escapeHtml(finding.suggestion)}</div>
+          <div class="bbai-fix"><span>建议</span>${escapeHtml(finding.suggestion)}</div>
           ${renderFeedbackRounds(finding.feedbackRounds)}
           ${feedbackOpen ? renderFindingFeedbackComposer(index, state.findingFeedbackLoading) : ""}
         </article>
@@ -1309,7 +1316,8 @@
     if (!rows.length) return "";
 
     return `
-      <div class="bbai-finding-evidence" aria-label="代码依据">
+      <details class="bbai-finding-evidence" aria-label="代码依据">
+        <summary>代码依据</summary>
         ${rows
           .map(
             ([label, value]) => `
@@ -1320,8 +1328,33 @@
             `
           )
           .join("")}
+      </details>
+    `;
+  }
+
+  function renderReviewWarnings(result) {
+    const failedChunks = getFailedChunks(result);
+    if (!failedChunks.length) return "";
+
+    return `
+      <div class="bbai-review-warning">
+        <strong>部分 diff 片段没有完成</strong>
+        <span>下面这些片段请求失败，已跳过并保留其它片段的审查结果。</span>
+        <ul>
+          ${failedChunks
+            .slice(0, 6)
+            .map((chunk) => {
+              const fileText = (Array.isArray(chunk.filePaths) ? chunk.filePaths : []).slice(0, 2).join("、") || "未知文件";
+              return `<li>第 ${Number(chunk.chunkIndex || 0) + 1}/${chunk.totalChunks || result.chunksTotal || "?"} 片段：${escapeHtml(fileText)}，${escapeHtml(chunk.error || "请求失败")}</li>`;
+            })
+            .join("")}
+        </ul>
       </div>
     `;
+  }
+
+  function getFailedChunks(result) {
+    return Array.isArray(result?.failedChunks) ? result.failedChunks : [];
   }
 
   function buildFindingJumpTarget(finding) {
@@ -1749,11 +1782,15 @@
 
   function summarizeResult(result) {
     const findings = getActiveFindings(result);
-    if (!findings.length) return "评审完成，未发现问题。";
+    const failedCount = getFailedChunks(result).length;
+    const failedSuffix = failedCount ? `，${failedCount} 个片段失败` : "";
+    if (!findings.length) {
+      return failedCount ? `评审完成，已完成片段未发现问题${failedSuffix}。` : "评审完成，未发现问题。";
+    }
 
     const urgent = findings.filter((finding) => finding.severity === "urgent").length;
     const suggestions = findings.length - urgent;
-    return `评审完成：${urgent} 个紧急问题，${suggestions} 条建议。`;
+    return `评审完成：${urgent} 个紧急问题，${suggestions} 条建议${failedSuffix}。`;
   }
 
   function summarizeFeedbackConversationResponse(result) {

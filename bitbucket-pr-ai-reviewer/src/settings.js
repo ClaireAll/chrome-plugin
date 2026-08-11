@@ -5,7 +5,7 @@ const DEFAULT_CONTEXT_LINES = 8;
 
 export const DEFAULT_REVIEW_RULES = `Focus on actionable code review findings.
 Prioritize correctness bugs, behavioral regressions, missing tests for changed behavior, security risks, data loss risks, and performance problems.
-For frontend files such as JS, TS, TSX, Vue, CSS, and Less, also check state handling, rendering edge cases, accessibility, memoization, API contracts, and user-visible styling regressions.
+For frontend files such as JS, TS, TSX, Vue, CSS, and Less, also check state handling, rendering edge cases, accessibility, API contracts, and user-visible styling regressions. For complex React props, report missing useMemo/useCallback only when supplied diff/context proves unstable references cause a repeated render, request, subscription, or computation; do not require memoization mechanically. Apply React Flow checks only to code that actually uses React Flow or @xyflow/react, and only when the diff/context proves stale state, missing subscription, or a missing Provider.
 Avoid style-only nitpicks unless they affect maintainability or product behavior.
 Skip test-file diffs such as test.ts, *.test.ts, *.spec.ts, files under test/tests/__tests__, and .md documentation files; do not produce findings for those files.
 For JSON files, review only the changed added/removed entries in the diff. Do not infer issues from unchanged neighboring JSON keys or missing surrounding context.

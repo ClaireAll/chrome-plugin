@@ -360,18 +360,18 @@
       payload: { groupName, pageTitle, url }
     });
 
-    if (response?.ok && response.status === "saved") {
+    if (response?.ok && ["saved", "moved"].includes(response.status)) {
       state.selectedGroupName = response.group.name;
       state.selectedGroupId = response.group.id || state.selectedGroupId;
       flashBall();
-      showToast(`已保存到「${response.group.name}」`);
+      showToast(response.status === "moved" ? `已移动到「${response.group.name}」` : `已保存到「${response.group.name}」`);
       await refreshState(false);
       togglePanel(false);
       return;
     }
 
     if (response?.ok && response.status === "duplicate") {
-      showToast(`已在「${response.existingGroupName}」中`);
+      showToast("已存在该链接");
       return;
     }
 
@@ -862,8 +862,14 @@
 
   function showToast(message) {
     window.clearTimeout(showToast.timer);
-    toast.textContent = "";
-    toast.hidden = true;
+    toast.textContent = message || "";
+    toast.hidden = !message;
+    if (message) {
+      showToast.timer = window.setTimeout(() => {
+        toast.textContent = "";
+        toast.hidden = true;
+      }, 1800);
+    }
   }
 
   function searchTree(data, query) {

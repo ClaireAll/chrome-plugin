@@ -1,0 +1,118 @@
+{
+  "name": "task-link",
+  "displayName": "Task Link",
+  "description": "将飞书项目、JSY、REPORT 与 KERNEL 任务号标记为可点击链接。",
+  "version": "0.1.0",
+  "publisher": "claire",
+  "private": true,
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Task Link",
+      "properties": {
+        "taskLink.customRules": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "自定义任务号链接规则。`prefix` 填任务号前缀，例如 `x-` 或 `x-xx`；`url` 填跳转链接模板，支持 `<num>`、`<id>`、`<key>`、`{id}`、`{key}` 或 `xx` 占位。",
+          "items": {
+            "type": "object",
+            "required": [
+              "prefix",
+              "url"
+            ],
+            "properties": {
+              "prefix": {
+                "type": "string",
+                "description": "任务号前缀，例如 x-。也兼容填写 x-xx，插件会自动取 x- 作为前缀。"
+              },
+              "url": {
+                "type": "string",
+                "description": "链接模板，例如 https://example.com/task/<num>。"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "configurationDefaults": {
+      "gitlens.autolinks": [
+        {
+          "prefix": "#f-",
+          "url": "https://project.feishu.cn/b2rl2h/issue/detail/<num>"
+        },
+        {
+          "prefix": "#m-",
+          "url": "https://project.feishu.cn/b2rl2h/story/detail/<num>"
+        },
+        {
+          "prefix": "#g-",
+          "url": "https://project.feishu.cn/b2rl2h/assignment/detail/<num>"
+        },
+        {
+          "prefix": "#s-",
+          "url": "https://project.feishu.cn/b2rl2h/s/detail/<num>"
+        },
+        {
+          "prefix": "#JSY-",
+          "url": "https://work.fineres.com/browse/JSY-<num>"
+        },
+        {
+          "prefix": "#REPORT-",
+          "url": "https://work.fineres.com/browse/REPORT-<num>"
+        },
+        {
+          "prefix": "#KERNEL-",
+          "url": "https://work.fineres.com/browse/KERNEL-<num>"
+        },
+        {
+          "prefix": "f-",
+          "url": "https://project.feishu.cn/b2rl2h/issue/detail/<num>"
+        },
+        {
+          "prefix": "m-",
+          "url": "https://project.feishu.cn/b2rl2h/story/detail/<num>"
+        },
+        {
+          "prefix": "g-",
+          "url": "https://project.feishu.cn/b2rl2h/assignment/detail/<num>"
+        },
+        {
+          "prefix": "s-",
+          "url": "https://project.feishu.cn/b2rl2h/s/detail/<num>"
+        },
+        {
+          "prefix": "JSY-",
+          "url": "https://work.fineres.com/browse/JSY-<num>"
+        },
+        {
+          "prefix": "REPORT-",
+          "url": "https://work.fineres.com/browse/REPORT-<num>"
+        },
+        {
+          "prefix": "KERNEL-",
+          "url": "https://work.fineres.com/browse/KERNEL-<num>"
+        }
+      ],
+      "gitlens.hovers.autolinks.enabled": true,
+      "gitlens.views.commitDetails.autolinks.enabled": true
+    }
+  },
+  "scripts": {
+    "check": "node --check extension.js",
+    "package:vsix": "npx --yes @vscode/vsce package --no-dependencies --allow-missing-repository --out task-link.vsix",
+    "package:zip": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (Test-Path -LiteralPath 'task-link.zip') { Remove-Item -LiteralPath 'task-link.zip' -Force }; Compress-Archive -LiteralPath 'task-link.vsix' -DestinationPath 'task-link.zip' -Force\"",
+    "package": "npm run check && npm run package:vsix && npm run package:zip"
+  },
+  "devDependencies": {}
+}

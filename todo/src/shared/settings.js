@@ -6,7 +6,8 @@ export const DEFAULT_SETTINGS = {
   ballPosition: null,
   ballThemeColor: DEFAULT_BALL_THEME_COLOR,
   colorPresets: DEFAULT_COLOR_PRESETS,
-  defaultColor: "#ffffff"
+  defaultColor: "#ffffff",
+  recurringTasks: []
 };
 
 export function sanitizeSettings(input) {
@@ -18,13 +19,43 @@ export function sanitizeSettings(input) {
     ballPosition: sanitizeBallPosition(source.ballPosition),
     ballThemeColor: normalizeHexColor(source.ballThemeColor) || DEFAULT_BALL_THEME_COLOR,
     colorPresets,
-    defaultColor
+    defaultColor,
+    recurringTasks: sanitizeRecurringTasks(source.recurringTasks)
   };
 }
 
 export function sanitizeColorPresets(value) {
   const colors = Array.isArray(value) ? value.map(normalizeHexColor).filter(Boolean) : DEFAULT_COLOR_PRESETS;
   return colors.length ? [...new Set(colors)] : DEFAULT_COLOR_PRESETS;
+}
+
+function sanitizeRecurringTasks(value) {
+  const source = Array.isArray(value) ? value : [];
+  return source
+    .map((task) => {
+      const type = ["workday", "weekly", "monthly"].includes(task?.type) ? task.type : "";
+      const id = String(task?.id || "").trim();
+      const text = String(task?.text || "").trim();
+      const time = normalizeTime(task?.time);
+      if (!type || !id || !text || !time) return null;
+      const result = {
+        id,
+        type,
+        text,
+        time,
+        lastRunKey: String(task?.lastRunKey || "").trim()
+      };
+      if (type === "workday") return result;
+      if (type === "weekly") {
+        const weekday = Number(task.weekday);
+        if (!Number.isInteger(weekday) || weekday < 1 || weekday > 7) return null;
+        return { ...result, weekday };
+      }
+      const monthDay = Number(task.monthDay);
+      if (!Number.isInteger(monthDay) || monthDay < 1 || monthDay > 31) return null;
+      return { ...result, monthDay };
+    })
+    .filter(Boolean);
 }
 
 function sanitizeBallPosition(value) {
@@ -62,6 +93,11 @@ function clampRatio(value) {
 
 function normalizeHexColor(value) {
   return isHexColor(value) ? value.toLowerCase() : "";
+}
+
+function normalizeTime(value) {
+  const text = String(value || "").trim();
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(text) ? text : "";
 }
 
 function isHexColor(value) {

@@ -323,11 +323,16 @@
   function applyLabelPlacement(label, placement) {
     label.classList.remove("is-top", "is-right", "is-bottom", "is-left");
     label.classList.add(`is-${placement.position}`);
-    const minWidth = label.classList.contains("has-details") ? 172 : 0;
+    const minWidth = label.classList.contains("style-inspector-color-card")
+      ? 220
+      : label.classList.contains("has-details")
+        ? 172
+        : 0;
     const width = Math.min(window.innerWidth - 12, Math.max(Math.round(placement.width), minWidth));
     const left = Math.min(Math.max(6, Math.round(placement.left)), Math.max(6, window.innerWidth - width - 6));
     label.style.left = `${left}px`;
     label.style.top = `${Math.round(placement.top)}px`;
+    label.style.width = label.classList.contains("style-inspector-color-card") ? `${width}px` : "";
     label.style.maxWidth = `${width}px`;
   }
 
@@ -909,11 +914,48 @@
       .filter((item) => item.rows.length);
   }
 
+  function keepFocusedColorItems(items) {
+    const textItems = [];
+    const textElements = new Set();
+
+    for (const item of items) {
+      const textRows = item.rows.filter((row) => row.label === "text");
+      if (!textRows.length || !hasOwnTextContent(item.element)) {
+        continue;
+      }
+
+      textElements.add(item.element);
+      textItems.push({
+        ...item,
+        rows: textRows
+      });
+    }
+
+    const innermostItems = items.filter((item) => {
+      if (textElements.has(item.element)) {
+        return false;
+      }
+
+      return !items.some(
+        (candidate) =>
+          candidate.element !== item.element &&
+          item.element.contains(candidate.element)
+      );
+    });
+
+    return [...textItems, ...innermostItems];
+  }
+
   function getSelectedElements(inspector, element) {
     if (settings.selectionScope === "self") {
       const item = buildItem(inspector, element, { includeSourceDetails: true });
       const selectedWithRows = ensureSelectedRows(item);
-      return selectedWithRows ? keepFirstTextFontRow([selectedWithRows]) : [];
+      if (!selectedWithRows) {
+        return [];
+      }
+      return settings.showColor
+        ? keepFocusedColorItems([selectedWithRows])
+        : keepFirstTextFontRow([selectedWithRows]);
     }
 
     const results = [];
@@ -940,7 +982,8 @@
       }
     }
 
-    const fontFilteredResults = keepFirstTextFontRow(results);
+    const scopedResults = settings.showColor ? keepFocusedColorItems(results) : results;
+    const fontFilteredResults = keepFirstTextFontRow(scopedResults);
     const deduped = inspector.filterInformativeItems(
       inspector.dedupeRepeatedElements(fontFilteredResults),
       settings
@@ -979,7 +1022,9 @@
 
   function renderSelectedSelf(inspector, item) {
     if (settings.showColor) {
-      return renderOverlayItems(inspector, [item], "selected-child");
+      return renderOverlayItems(inspector, [item], "selected-child", {
+        avoidRect: item.rect
+      });
     }
 
     const fragment = document.createDocumentFragment();
@@ -1085,7 +1130,13 @@
 
         const value = document.createElement("strong");
         value.className = "style-inspector-color-value";
-        value.textContent = row.value;
+        value.title = row.value;
+        for (const part of String(row.value || "").split(" | ").filter(Boolean)) {
+          const valuePart = document.createElement("span");
+          valuePart.className = "style-inspector-color-value-part";
+          valuePart.textContent = part.trim();
+          value.append(valuePart);
+        }
 
         line.append(swatch, name, value);
         label.append(line);
@@ -1118,12 +1169,33 @@
     return rowSummary(item.rows, item.element) || item.element.tagName.toLowerCase();
   }
 
+  function colorLabelPlacementSize(item) {
+    const width = Math.min(300, Math.max(220, window.innerWidth - 12));
+    const valueLineCount = (item.rows || []).reduce((count, row) => {
+      const parts = String(row.value || "")
+        .split(" | ")
+        .filter(Boolean);
+      return count + Math.max(1, parts.length);
+    }, 0);
+    const rowCount = Math.max(1, item.rows?.length || 0);
+    const height = Math.round(valueLineCount * settings.labelSize * 1.28 + rowCount * 10 + 12);
+    return {
+      width,
+      height: Math.max(34, height)
+    };
+  }
+
+  function labelPlacementSizeForItem(item) {
+    return settings.showColor ? colorLabelPlacementSize(item) : null;
+  }
+
   function renderOverlayItems(inspector, items, variant = "global", options = {}) {
     const fragment = document.createDocumentFragment();
     const placements = inspector.planLabelPlacements(
       items.map((item) => ({
         rect: item.rect,
-        label: labelTextForItem(item)
+        label: labelTextForItem(item),
+        size: labelPlacementSizeForItem(item)
       })),
       {
         viewportWidth: window.innerWidth,

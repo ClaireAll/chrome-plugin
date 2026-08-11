@@ -137,7 +137,7 @@ async function saveCurrentPage(payload) {
     };
   }
 
-  if (result.status !== "saved") {
+  if (!["saved", "moved"].includes(result.status)) {
     return {
       ok: false,
       reason: "save_error",
@@ -151,7 +151,9 @@ async function saveCurrentPage(payload) {
 
   return {
     ok: true,
-    status: "saved",
+    status: result.status,
+    previousGroupId: result.previousGroupId,
+    previousGroupName: result.previousGroupName,
     group: result.group,
     page: result.page,
     data: result.data

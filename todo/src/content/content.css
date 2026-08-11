@@ -255,9 +255,13 @@
 }
 
 #todo-extension-root .todo-create-submit {
-  min-width: 52px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   min-height: 36px;
-  padding: 0 12px;
+  padding: 0;
+  place-items: center;
   border: 1px solid var(--todo-cobalt);
   border-radius: 8px;
   background: var(--todo-cobalt);

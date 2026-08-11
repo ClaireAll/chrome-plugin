@@ -78,17 +78,6 @@ export function addPageToGroup(data, request) {
     };
   }
 
-  const duplicate = findPageByUrl(source, url);
-  if (duplicate) {
-    return {
-      status: "duplicate",
-      existingGroupId: duplicate.group.id,
-      existingGroupName: duplicate.group.name,
-      page: duplicate.page,
-      data: source
-    };
-  }
-
   const now = new Date().toISOString();
   const groupName = String(request?.groupName || DEFAULT_GROUP_NAME).trim() || DEFAULT_GROUP_NAME;
   const pageTitle = String(request?.pageTitle || "").trim() || cleanPageTitle("", url);
@@ -107,6 +96,48 @@ export function addPageToGroup(data, request) {
       children: []
     };
     groups.push(group);
+  }
+
+  const targetDuplicate = group.pages.find((page) => page.url === url);
+  if (targetDuplicate) {
+    return {
+      status: "duplicate",
+      existingGroupId: group.id,
+      existingGroupName: group.name,
+      page: targetDuplicate,
+      data: source
+    };
+  }
+
+  const duplicate = findPageByUrl({ version: source.version, groups }, url);
+  if (duplicate) {
+    const movingPage = { ...clonePage(duplicate.page), updatedAt: now };
+    const nextGroups = groups.map((item) => {
+      if (item.id === duplicate.group.id) {
+        return {
+          ...item,
+          pages: item.pages.filter((page) => page.id !== duplicate.page.id),
+          updatedAt: now
+        };
+      }
+      if (item.id === group.id) {
+        return {
+          ...item,
+          pages: [...item.pages, movingPage],
+          updatedAt: now
+        };
+      }
+      return item;
+    });
+    const targetGroup = nextGroups.find((item) => item.id === group.id);
+    return {
+      status: "moved",
+      previousGroupId: duplicate.group.id,
+      previousGroupName: duplicate.group.name,
+      group: targetGroup,
+      page: movingPage,
+      data: { version: source.version, groups: nextGroups }
+    };
   }
 
   const page = {

@@ -110,7 +110,7 @@
             <input class="todo-create-input" autocomplete="off" placeholder="添加新任务..." />
             <kbd class="todo-create-key">Enter</kbd>
           </div>
-          <button class="todo-create-submit" type="submit" aria-label="添加待办">添加</button>
+          <button class="todo-create-submit" type="submit" aria-label="添加待办" title="添加待办">${iconMarkup("plus")}</button>
         </form>
         <div class="todo-list"></div>
       </section>

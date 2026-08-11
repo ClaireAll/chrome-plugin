@@ -1476,7 +1476,7 @@ export function planLabelPlacements(items, options = {}) {
   const avoidRects = Array.isArray(options.avoidRects) ? options.avoidRects : [];
 
   return items.map((item, index) => {
-    const size = labelSize(item.label, labelSizePx);
+    const size = item.size || labelSize(item.label, labelSizePx);
     const externalCandidates = options.avoidRect
       ? externalLabelRects(item.rect, size, viewport, options.avoidRect, gap, avoidRects)
       : [];

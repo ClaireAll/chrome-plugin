@@ -1,0 +1,99 @@
+{
+  "name": "i18n-search-helper",
+  "displayName": "I18n Search Helper",
+  "description": "Convert zh_CN translation text to i18n keys and search code usage in VS Code.",
+  "version": "0.1.5",
+  "publisher": "claire",
+  "private": true,
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:i18nSearchHelper.searchInFiles",
+    "onCommand:i18nSearchHelper.searchInEditor",
+    "onCommand:i18nSearchHelper.copyKey",
+    "onCommand:i18nSearchHelper.searchLastKey",
+    "onCommand:i18nSearchHelper.searchOriginalText"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "i18nSearchHelper.searchInFiles",
+        "title": "I18n Search: Search Key in Files",
+        "category": "I18n Search",
+        "icon": "$(search)"
+      },
+      {
+        "command": "i18nSearchHelper.searchInEditor",
+        "title": "I18n Search: Search Key in Current File",
+        "category": "I18n Search",
+        "icon": "$(symbol-key)"
+      },
+      {
+        "command": "i18nSearchHelper.copyKey",
+        "title": "I18n Search: Copy Key from Text",
+        "category": "I18n Search",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "i18nSearchHelper.searchLastKey",
+        "title": "I18n Search: Switch to Key Search",
+        "category": "I18n Search",
+        "icon": "$(symbol-key)"
+      },
+      {
+        "command": "i18nSearchHelper.searchOriginalText",
+        "title": "I18n Search: Switch to Original Text Search",
+        "category": "I18n Search",
+        "icon": "$(symbol-string)"
+      }
+    ],
+    "configuration": {
+      "title": "I18n Search Helper",
+      "properties": {
+        "i18nSearchHelper.localeFile": {
+          "type": "string",
+          "scope": "resource",
+          "default": "zh_CN.json",
+          "description": "Locale JSON file name, relative workspace path, or absolute path. A short name like zh_CN.json is resolved in each workspace folder and saved as a complete workspace-relative path."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "i18nSearchHelper.searchInEditor",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "i18nSearchHelper.searchInFiles",
+          "when": "view == workbench.view.search || view == search",
+          "group": "navigation@0"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "i18nSearchHelper.searchInEditor",
+          "group": "navigation"
+        },
+        {
+          "command": "i18nSearchHelper.searchInFiles",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "check": "node --check extension.js"
+  },
+  "devDependencies": {}
+}

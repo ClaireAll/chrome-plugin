@@ -14,6 +14,7 @@
 - Unfinished todos are stored in `chrome.storage.local`.
 - Completed records are written to a selected or newly created JSON file only when a todo is completed.
 - Reminder notifications fire once only when Chrome is running and the alarm is handled on time.
+- Workday, weekly, and monthly scheduled tasks are configured from the options page and are added to unfinished todos by Chrome alarms.
 
 ## Manual Verification
 
@@ -33,4 +34,4 @@
 8. Complete a todo and confirm the JSON record contains only `text` and `completedAt`.
 9. Confirm an unbound or unauthorized JSON file blocks completion without removing the todo.
 10. Confirm a due reminder shows one Chrome notification when Chrome is running.
-11. Open the options page and confirm text search, edit, delete, color presets, and weekly summary.
+11. Open the options page and confirm text search, edit, delete, color presets, scheduled tasks, and weekly summary.

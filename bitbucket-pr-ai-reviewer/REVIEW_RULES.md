@@ -40,6 +40,8 @@
 4. 是否存在权限、禁用态、提交防重、批量操作、分页筛选条件丢失等业务问题。
 5. 是否存在文本溢出、按钮拥挤、移动端布局错位、主题色不一致或可访问性退化。
 6. 是否缺少关键路径测试、交互回归说明或边界条件验证。
+7. 对新增或修改的对象、数组、Map、函数 props，只有在能证明它传入 memoized 组件、重列表、昂贵子组件或 effect 依赖，并且引用变化会触发重复渲染、请求、订阅或计算时，才指出缺少 useMemo/useCallback；不要机械要求所有复杂 props 都 memo。
+8. 只有在代码实际使用 React Flow 或 @xyflow/react 时，才检查节点/边 UI 的订阅、回调取最新状态和复用节点组件的 Provider 依赖；必须能说明陈旧数据、未订阅状态或 Provider 缺失的实际路径。
 
 不要输出：
 - 只关于代码风格、空行、import 排序的建议。
@@ -130,12 +132,15 @@ Provider 和轻量入口：
 2. 检查 useEffect 依赖、闭包旧值、异步竞态、重复请求、未清理订阅/定时器、props 与 state 不同步。
 3. 组件、函数、文件应保持单一职责；超过约 300 行或同时承担多个职责时，提出拆分建议，但不要要求无关大重构。
 4. 关键业务状态变化应可追踪，避免在多个回调里重复写同一份状态。
+5. 新增或修改对象、数组、Map、函数 props 时，先确认它是否传给 memoized 组件、重列表、昂贵子组件或 effect 依赖；只有引用变化能证明触发重复渲染、请求、订阅或计算时，才建议 useMemo/useCallback。
+6. 代码使用 React Flow 或 @xyflow/react 时，节点/边的 UI 读取应使用订阅 hooks；需要读取最新节点/边状态的回调应使用库提供的 store API 或函数式更新，避免读取闭包旧值；普通 React 组件不要套用此规则。
 
 样式、className 和布局：
 1. 复杂 className 拼接优先使用 cn()，导入路径为 @jsy/core/lib/utils/style；数组 join、模板字符串和字符串拼接要检查是否可安全转换。
 2. 简单静态 className 不需要强行改 cn。
 3. 样式优先 Tailwind；只有动画、复杂选择器、媒体查询等 Tailwind 难表达时再使用 Less。
 4. 文本溢出、按钮拥挤、移动端布局错位、主题色不一致、空态/加载态覆盖层层级错误都应指出。
+5. 动态 className 只在条件拼接造成样式缺失、覆盖失败、冲突或布局异常时提出；不要把 cn、Tailwind 或样式写法偏好本身当作问题。
 
 FineUI 到 FineDesign / React 迁移：
 1. 不要凭空假设 @fx-ui/fine-design 存在布局组件；FD 只有 Button、Select、Alert、Message、Dialog、Tooltip、Menu、PopConfirm、Form、Input、Pagination 等业务组件，布局用 HTML div + Tailwind。

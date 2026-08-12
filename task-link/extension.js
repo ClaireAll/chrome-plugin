@@ -327,23 +327,18 @@ function applyUrlTemplate(urlTemplate, id, key) {
   let url = String(urlTemplate);
   let replaced = false;
 
-  url = replaceTemplateToken(url, /<num>|<id>|\{num\}|\{id\}/g, encodedId, () => {
+  url = url.replace(/<num>|<id>|\{num\}|\{id\}/g, () => {
     replaced = true;
+    return encodedId;
   });
-  url = replaceTemplateToken(url, /<key>|\{key\}/g, encodedKey, () => {
+  url = url.replace(/<key>|\{key\}/g, () => {
     replaced = true;
+    return encodedKey;
   });
 
   if (replaced) return url;
   if (url.includes("xx")) return url.replace(/xx/g, encodedId);
   return `${url}${encodedId}`;
-}
-
-function replaceTemplateToken(text, pattern, value, onReplace) {
-  return text.replace(pattern, () => {
-    onReplace();
-    return value;
-  });
 }
 
 function clearTaskRuleCache() {
@@ -443,7 +438,7 @@ async function ensureGitLensAutolinks() {
 
 function getGitLensAutolinks() {
   return getEffectiveTaskRules().flatMap((rule) => {
-    const url = toGitLensUrlTemplate(rule);
+    const url = applyGitLensUrlTemplate(rule.urlTemplate, rule.prefix);
     return [
       {
         prefix: `#${rule.prefix}`,
@@ -457,19 +452,17 @@ function getGitLensAutolinks() {
   });
 }
 
-function toGitLensUrlTemplate(rule) {
-  return applyGitLensUrlTemplate(rule.urlTemplate, rule.prefix);
-}
-
 function applyGitLensUrlTemplate(urlTemplate, prefix) {
   let url = String(urlTemplate);
   let replaced = false;
 
-  url = replaceTemplateToken(url, /<num>|<id>|\{num\}|\{id\}/g, "<num>", () => {
+  url = url.replace(/<num>|<id>|\{num\}|\{id\}/g, () => {
     replaced = true;
+    return "<num>";
   });
-  url = replaceTemplateToken(url, /<key>|\{key\}/g, `${prefix}<num>`, () => {
+  url = url.replace(/<key>|\{key\}/g, () => {
     replaced = true;
+    return `${prefix}<num>`;
   });
 
   if (replaced) return url;

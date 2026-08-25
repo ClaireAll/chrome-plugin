@@ -17,7 +17,7 @@ Enter a task key, for example:
 f-7028807610
 ```
 
-Press Enter or click "打开". The extension removes a single-letter Feishu prefix such as `f-` or `m-`, then opens the generated detail URL in a new tab.
+Press Enter or click "打开". The extension opens `m-` keys as stories and `f-` keys as issues, removing the prefix before navigating to the detail page. A numeric key without a prefix continues to open as an issue.
 
 You can also jump from the browser address bar:
 

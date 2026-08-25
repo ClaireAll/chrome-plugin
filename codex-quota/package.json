@@ -1,0 +1,32 @@
+{
+  "name": "codex-quota",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-platform Codex quota floating widget.",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "typecheck": "tsc --noEmit",
+    "build": "pnpm run typecheck && electron-vite build",
+    "package:mac": "pnpm run build && pnpm exec electron-builder --mac dmg zip",
+    "package:win": "pnpm run build && pnpm exec electron-builder --win nsis portable --x64"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.3.2",
+    "antd": "^6.6.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  }
+}

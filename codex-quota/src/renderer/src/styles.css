@@ -64,6 +64,10 @@ button,
   color: var(--text);
 }
 
+.app-stage.arrow-bottom {
+  padding: 0 8px 28px;
+}
+
 .app-stage.theme-midnight {
   --card-surface-start: rgba(25, 38, 60, 0.98);
   --card-surface-end: rgba(13, 23, 39, 0.98);
@@ -161,7 +165,7 @@ button,
 }
 
 .widget-shell.expanded {
-  --shell-padding-x: 16px;
+  --shell-padding-x: 13px;
   --shell-padding-y: 14px;
   padding: var(--shell-padding-y) var(--shell-padding-x);
 }
@@ -245,6 +249,11 @@ button,
   transition: opacity 160ms ease;
 }
 
+.expand-trigger.arrow-bottom {
+  top: auto;
+  bottom: 2px;
+}
+
 .app-stage:not(.is-dragging):not(.is-transitioning):hover .expand-trigger {
   opacity: 1;
   pointer-events: auto;
@@ -267,7 +276,7 @@ button,
   border-radius: 2px;
 }
 
-.expand-trigger.expand .chevron {
+.expand-trigger.direction-up .chevron {
   border-right-color: transparent;
   border-bottom-color: transparent;
   border-left-color: var(--accent);
@@ -276,7 +285,7 @@ button,
   animation: flow-up 1.45s ease-in-out infinite;
 }
 
-.expand-trigger.collapse .chevron {
+.expand-trigger.direction-down .chevron {
   border-left-color: transparent;
   border-top-color: transparent;
   border-right-color: var(--accent);

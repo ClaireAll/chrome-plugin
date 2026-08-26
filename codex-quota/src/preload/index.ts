@@ -3,6 +3,7 @@ import type {
   DesktopApi,
   LaunchAtLoginStatus,
   QuotaState,
+  WindowPlacement,
   WindowSizeMode
 } from '../shared/types'
 
@@ -20,6 +21,18 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke('platform:get-launch-at-login'),
   setLaunchAtLogin: (enabled: boolean): Promise<LaunchAtLoginStatus> =>
     ipcRenderer.invoke('platform:set-launch-at-login', enabled),
+  getWindowPlacement: (): Promise<WindowPlacement> =>
+    ipcRenderer.invoke('window:get-placement'),
+  onWindowPlacementChanged: (listener: (placement: WindowPlacement) => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      placement: WindowPlacement
+    ) => {
+      listener(placement)
+    }
+    ipcRenderer.on('window:placement-changed', handler)
+    return () => ipcRenderer.removeListener('window:placement-changed', handler)
+  },
   setWindowSize: (mode: WindowSizeMode) =>
     ipcRenderer.invoke('window:set-size', mode),
   hideWindow: () => ipcRenderer.invoke('window:hide'),

@@ -16,6 +16,9 @@ export function registerIpcHandlers(
   ipcMain.handle('platform:set-launch-at-login', (_event, enabled: boolean) =>
     platform.setLaunchAtLogin(Boolean(enabled))
   )
+  ipcMain.handle('window:get-placement', () =>
+    windowManager.getWindowPlacement()
+  )
   ipcMain.handle('platform:open-usage-page', () =>
     platform.openUsagePage()
   )
@@ -49,6 +52,7 @@ export function registerIpcHandlers(
     ipcMain.removeHandler('quota:refresh')
     ipcMain.removeHandler('platform:get-launch-at-login')
     ipcMain.removeHandler('platform:set-launch-at-login')
+    ipcMain.removeHandler('window:get-placement')
     ipcMain.removeHandler('platform:open-usage-page')
     ipcMain.removeHandler('window:set-size')
     ipcMain.removeHandler('window:hide')

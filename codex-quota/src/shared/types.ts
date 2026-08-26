@@ -38,6 +38,12 @@ export type LaunchAtLoginStatus = {
 
 export type WindowSizeMode = 'collapsed' | 'expanded'
 
+export type WindowArrowPlacement = 'top' | 'bottom'
+
+export type WindowPlacement = {
+  arrowPlacement: WindowArrowPlacement
+}
+
 export type ThemeKey = 'light' | 'midnight' | 'sand' | 'aurora'
 
 export type DesktopApi = {
@@ -46,6 +52,10 @@ export type DesktopApi = {
   onQuotaStateChanged: (listener: (state: QuotaState) => void) => () => void
   getLaunchAtLogin: () => Promise<LaunchAtLoginStatus>
   setLaunchAtLogin: (enabled: boolean) => Promise<LaunchAtLoginStatus>
+  getWindowPlacement: () => Promise<WindowPlacement>
+  onWindowPlacementChanged: (
+    listener: (placement: WindowPlacement) => void
+  ) => () => void
   setWindowSize: (mode: WindowSizeMode) => Promise<void>
   hideWindow: () => Promise<void>
   beginWindowDrag: () => void

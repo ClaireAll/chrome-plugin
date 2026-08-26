@@ -17,7 +17,8 @@ import {
 import type {
   QuotaSnapshot,
   QuotaState,
-  ThemeKey
+  ThemeKey,
+  WindowArrowPlacement
 } from '../../shared/types'
 
 type DragState = {
@@ -205,6 +206,8 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [theme, setTheme] = useState<ThemeKey>(readStoredTheme)
+  const [arrowPlacement, setArrowPlacement] =
+    useState<WindowArrowPlacement>('top')
   const dragState = useRef<DragState | null>(null)
 
   const snapshot = state.snapshot
@@ -227,6 +230,34 @@ function App() {
 
     return () => {
       disposed = true
+      unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    const unsubscribe = window.desktop.onWindowPlacementChanged((placement) => {
+      if (!disposed) {
+        setArrowPlacement(placement.arrowPlacement)
+      }
+    })
+
+    const syncPlacement = () => {
+      void window.desktop
+        .getWindowPlacement()
+        .then((placement) => {
+          if (!disposed) {
+            setArrowPlacement(placement.arrowPlacement)
+          }
+        })
+        .catch(() => undefined)
+    }
+    syncPlacement()
+    const retryTimer = window.setTimeout(syncPlacement, 200)
+
+    return () => {
+      disposed = true
+      window.clearTimeout(retryTimer)
       unsubscribe()
     }
   }, [])
@@ -414,13 +445,26 @@ function App() {
           className={
             'app-stage theme-' +
             theme +
+            ' arrow-' +
+            arrowPlacement +
             (isDragging ? ' is-dragging' : '') +
             (isTransitioning ? ' is-transitioning' : '')
           }
         >
           <button
             type="button"
-            className={'expand-trigger ' + (expanded ? 'collapse' : 'expand')}
+            className={
+              'expand-trigger arrow-' +
+              arrowPlacement +
+              ' direction-' +
+              (arrowPlacement === 'top'
+                ? expanded
+                  ? 'down'
+                  : 'up'
+                : expanded
+                  ? 'up'
+                  : 'down')
+            }
             aria-label={expanded ? '收起额度详情' : '展开额度详情'}
             onClick={() => void setExpandedMode(!expanded)}
             disabled={isTransitioning || isDragging}

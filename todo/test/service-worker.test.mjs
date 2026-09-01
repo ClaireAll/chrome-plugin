@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MESSAGE_TYPES } from "../src/shared/messages.js";
+import { MESSAGE_TYPES } from "../src/shared/messages.ts";
 
 test("complete message appends completed JSON and removes unfinished todo", async (t) => {
   const chromeStub = installChromeStub(t);
@@ -16,6 +16,29 @@ test("complete message appends completed JSON and removes unfinished todo", asyn
   assert.equal(result.ok, true);
   assert.deepEqual(chromeStub.appended, { text: "Task A", completedAt: "2026-07-23T09:30:00.000Z" });
   assert.deepEqual(chromeStub.values.todoUnfinishedItems, []);
+});
+
+test("todo state refresh can skip completed file permission checks", async (t) => {
+  const chromeStub = installChromeStub(t);
+  const worker = await importWorker("state-without-completed-status");
+  let completedStatusCalls = 0;
+  worker.__setCompletedStoreForTest({
+    async getCompletedStatus() {
+      completedStatusCalls += 1;
+      return { bound: true, permission: "granted" };
+    }
+  });
+
+  const result = await worker.handleMessage({
+    type: MESSAGE_TYPES.GET_STATE,
+    payload: { includeCompletedStatus: false }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(Object.hasOwn(result, "completedStatus"), false);
+  assert.equal(completedStatusCalls, 0);
+  assert.deepEqual(result.items, []);
+  assert.ok(chromeStub.storageGetCalls > 0);
 });
 
 test("worker serializes deferred completions so both completed records persist", async (t) => {
@@ -466,7 +489,7 @@ function matchingAlarm(id = "a") {
 }
 
 function importWorker(name) {
-  return import(`../src/background/service-worker.js?test=${Date.now()}-${name}`);
+  return import(`../src/background/service-worker.ts?test=${Date.now()}-${name}`);
 }
 
 function installChromeStub(t, options) {

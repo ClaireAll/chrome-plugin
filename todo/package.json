@@ -4,7 +4,25 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test",
-    "check": "node --check src/background/service-worker.js && node --check src/content/content.js && node --check src/options/options.js && node --check src/shared/messages.js && node --check src/shared/domain.js && node --check src/shared/settings.js && node --check src/shared/storage.js && node --check src/shared/completed-file-store.js && node --check src/shared/data-location.js && node --check src/shared/reminder-schedule.js && node --check src/shared/weekly-summary.js"
+    "build": "vite build",
+    "dev": "vite",
+    "test": "node --experimental-strip-types --test",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit --allowJs false --pretty false"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.3.2",
+    "antd": "^6.6.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.7",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^5.9.2",
+    "vite": "^8.2.2"
   }
 }

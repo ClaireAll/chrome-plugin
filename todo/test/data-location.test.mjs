@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 test("data location exposes unsupported remote boundary without using it", async () => {
   globalThis.chrome = createChromeStorage({ todoCompletedDataLocation: { mode: "remote" } }).chrome;
-  const store = await import(`../src/shared/data-location.js?test=${Date.now()}-remote`);
+  const store = await import(`../src/shared/data-location.ts?test=${Date.now()}-remote`);
 
   const result = await store.readCompletedData();
 

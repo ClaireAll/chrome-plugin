@@ -4,8 +4,9 @@ import {
   readCompletedData as readLocalCompletedData,
   writeCompletedData as writeLocalCompletedData,
   appendCompletedRecordToFile
-} from "./completed-file-store.js";
-import { deleteCompletedRecord, updateCompletedRecordText } from "./domain.js";
+} from "./completed-file-store.ts";
+import { deleteCompletedRecord, updateCompletedRecordText } from "./domain.ts";
+import type { CompletedRecord } from "./domain";
 
 const DATA_LOCATION_KEY = "todoCompletedDataLocation";
 
@@ -24,17 +25,17 @@ export async function writeCompletedData(data) {
   return writeLocalCompletedData(data);
 }
 
-export async function appendCompletedRecord(record) {
+export async function appendCompletedRecord(record: Partial<CompletedRecord> | null | undefined) {
   if (await isRemoteMode()) return failure("unsupported_remote", "Remote completed data is not supported");
   return appendCompletedRecordToFile(record?.text, record?.completedAt);
 }
 
-export async function updateCompletedRecord(recordIndex, text) {
+export async function updateCompletedRecord(recordIndex: number, text: string) {
   if (await isRemoteMode()) return failure("unsupported_remote", "Remote completed data is not supported");
   return mutateLocalCompletedData((data) => updateCompletedRecordText(data, recordIndex, text));
 }
 
-export async function deleteCompletedRecordAt(recordIndex) {
+export async function deleteCompletedRecordAt(recordIndex: number) {
   if (await isRemoteMode()) return failure("unsupported_remote", "Remote completed data is not supported");
   return mutateLocalCompletedData((data) => deleteCompletedRecord(data, recordIndex));
 }
@@ -48,9 +49,9 @@ function failure(reason, message) {
   return { ok: false, reason, message };
 }
 
-function chromeStorageGet(key) {
-  return new Promise((resolve) => {
+function chromeStorageGet(key: string): Promise<Record<string, any>> {
+  return new Promise<Record<string, any>>((resolve) => {
     if (!globalThis.chrome?.storage?.local) return resolve({});
-    chrome.storage.local.get(key, resolve);
+    (chrome.storage.local.get as any)(key, resolve);
   });
 }

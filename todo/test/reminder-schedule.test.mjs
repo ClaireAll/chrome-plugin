@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { alarmNameForTodo, isReminderOnTime, todoIdFromAlarmName } from "../src/shared/reminder-schedule.js";
+import { alarmNameForTodo, isReminderOnTime, todoIdFromAlarmName } from "../src/shared/reminder-schedule.ts";
 
 test("alarm names encode and decode todo ids", () => {
   assert.equal(alarmNameForTodo("abc"), "todo-reminder:abc");

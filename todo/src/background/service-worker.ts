@@ -7,11 +7,16 @@ import {
   setTodoReminder,
   updateTodoColor,
   updateTodoText
-} from "../shared/domain.js";
-import * as completedDataLocation from "../shared/data-location.js";
-import { failure, MESSAGE_TYPES, success } from "../shared/messages.js";
-import { alarmNameForTodo, isReminderOnTime, todoIdFromAlarmName } from "../shared/reminder-schedule.js";
-import { loadTodoItems, loadTodoState, saveSettings, saveTodoItems } from "../shared/storage.js";
+} from "../shared/domain.ts";
+import * as completedDataLocation from "../shared/data-location.ts";
+import { failure, MESSAGE_TYPES, success } from "../shared/messages.ts";
+import { alarmNameForTodo, isReminderOnTime, todoIdFromAlarmName } from "../shared/reminder-schedule.ts";
+import { loadTodoItems, loadTodoState, saveSettings, saveTodoItems } from "../shared/storage.ts";
+
+type ExtensionMessage = {
+  type?: string;
+  payload?: Record<string, any>;
+};
 
 let completedStoreOverride = null;
 let mutationQueue = Promise.resolve();
@@ -39,21 +44,32 @@ export function __setCompletedStoreForTest(store) {
   completedStoreOverride = store;
 }
 
-export async function handleMessage(message = {}, sender) {
+export async function handleMessage(message: ExtensionMessage = {}, sender?: chrome.runtime.MessageSender) {
   if (isMutationMessage(message.type)) return enqueueMutation(() => handleMessageNow(message, sender));
   return handleMessageNow(message, sender);
 }
 
-async function handleMessageNow(message = {}, sender) {
+async function handleMessageNow(message: ExtensionMessage = {}, sender?: chrome.runtime.MessageSender) {
   const payload = message.payload || {};
 
   switch (message.type) {
     case MESSAGE_TYPES.GET_STATE: {
       const state = await loadTodoState();
-      return success({ ...state, completedStatus: await completedStore().getCompletedStatus() });
+      return success({
+        ...state,
+        ...(payload.includeCompletedStatus === false
+          ? {}
+          : { completedStatus: await completedStore().getCompletedStatus() })
+      });
     }
     case MESSAGE_TYPES.ADD_TODO:
-      return saveItems(addTodoItem(await loadTodoItems(), payload.text, await loadSettingsForTodo()));
+      return saveItems(addTodoItem(
+        await loadTodoItems(),
+        payload.text,
+        await loadSettingsForTodo(),
+        undefined,
+        { position: payload.position }
+      ));
     case MESSAGE_TYPES.UPDATE_TODO_TEXT:
       return saveItems(updateTodoText(await loadTodoItems(), payload.id, payload.text));
     case MESSAGE_TYPES.UPDATE_TODO_COLOR:
@@ -70,9 +86,6 @@ async function handleMessageNow(message = {}, sender) {
       return completeTodo(payload);
     case MESSAGE_TYPES.UPDATE_SETTINGS:
       return success({ settings: await saveSettings(payload) });
-    case MESSAGE_TYPES.OPEN_OPTIONS:
-      await chrome.runtime.openOptionsPage();
-      return success();
     case MESSAGE_TYPES.GET_COMPLETED_STATUS:
       return completedStore().getCompletedStatus();
     case MESSAGE_TYPES.READ_COMPLETED_DATA:

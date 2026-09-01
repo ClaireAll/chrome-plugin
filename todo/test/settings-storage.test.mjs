@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 test("settings sanitizes ball position and color presets", async () => {
-  const { sanitizeSettings } = await import(`../src/shared/settings.js?test=${Date.now()}-sanitize`);
+  const { sanitizeSettings } = await import(`../src/shared/settings.ts?test=${Date.now()}-sanitize`);
   const settings = sanitizeSettings({
     ballPosition: { leftRatio: 1.4, topRatio: -0.2, snapped: false, side: "left" },
     colorPresets: ["#ffffff", "bad", "#dcfce7"],
@@ -15,7 +15,7 @@ test("settings sanitizes ball position and color presets", async () => {
 });
 
 test("settings snaps ratio ball positions without a side to the nearest edge", async () => {
-  const { sanitizeSettings } = await import(`../src/shared/settings.js?test=${Date.now()}-ratio-edge`);
+  const { sanitizeSettings } = await import(`../src/shared/settings.ts?test=${Date.now()}-ratio-edge`);
   const settings = sanitizeSettings({
     ballPosition: { leftRatio: 0.6, topRatio: 0.4, snapped: false, side: null }
   });
@@ -24,7 +24,7 @@ test("settings snaps ratio ball positions without a side to the nearest edge", a
 });
 
 test("settings preserves legacy pixel ball positions for content migration", async () => {
-  const { sanitizeSettings } = await import(`../src/shared/settings.js?test=${Date.now()}-legacy-ball`);
+  const { sanitizeSettings } = await import(`../src/shared/settings.ts?test=${Date.now()}-legacy-ball`);
   const settings = sanitizeSettings({
     ballPosition: { left: 40, top: 50, snapped: false, side: "right" }
   });
@@ -35,7 +35,7 @@ test("settings preserves legacy pixel ball positions for content migration", asy
 test("storage reads and writes normalized todo state through chrome.storage.local", async () => {
   const stub = createChromeStorage();
   globalThis.chrome = stub.chrome;
-  const storage = await import(`../src/shared/storage.js?test=${Date.now()}-storage`);
+  const storage = await import(`../src/shared/storage.ts?test=${Date.now()}-storage`);
 
   await storage.saveTodoItems([{ id: "a", text: " First ", color: "#fff" }]);
   const items = await storage.loadTodoItems();
@@ -53,7 +53,7 @@ test("loadTodoItems rejects when storage get reports lastError", async () => {
   const error = { message: "storage get failed" };
   const stub = createChromeStorage({}, { get: error });
   globalThis.chrome = stub.chrome;
-  const storage = await import(`../src/shared/storage.js?test=${Date.now()}-storage-get-error`);
+  const storage = await import(`../src/shared/storage.ts?test=${Date.now()}-storage-get-error`);
 
   await assert.rejects(storage.loadTodoItems(), (reason) => reason === error);
 });
@@ -62,7 +62,7 @@ test("saveTodoItems rejects when storage set reports lastError", async () => {
   const error = { message: "storage set failed" };
   const stub = createChromeStorage({}, { set: error });
   globalThis.chrome = stub.chrome;
-  const storage = await import(`../src/shared/storage.js?test=${Date.now()}-storage-set-error`);
+  const storage = await import(`../src/shared/storage.ts?test=${Date.now()}-storage-set-error`);
 
   await assert.rejects(storage.saveTodoItems([]), (reason) => reason === error);
 });

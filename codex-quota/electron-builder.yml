@@ -1,0 +1,26 @@
+appId: com.local.codexquota
+productName: Codex Quota
+directories:
+  output: release
+  buildResources: assets
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: assets/tray/tray.png
+    to: tray.png
+mac:
+  category: public.app-category.utilities
+  extendInfo:
+    LSUIElement: true
+  target:
+    - dmg
+    - zip
+win:
+  target:
+    - nsis
+    - portable
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false

@@ -1,6 +1,6 @@
 # 个人插件集合
 
-这个仓库用于存放个人自用的浏览器插件和编辑器辅助工具。每个一级目录通常对应一个可独立加载或调试的插件。
+这个仓库用于存放个人自用的浏览器插件、编辑器辅助工具和桌面小工具。每个一级目录通常对应一个可独立加载或调试的工具。
 
 ## 分支约定
 
@@ -13,6 +13,7 @@
 | --- | --- | --- | --- |
 | `api-rewriter` | API Rewriter | Chrome 插件 | 在当前标签页的 Side Panel 中按需记录和拦截 Fetch/XHR JSON 接口，支持手动修改 Body、自动规则、请求体模板、持久接口过滤和 JSON 导入导出。 |
 | `bitbucket-pr-ai-reviewer` | Bitbucket PR AI Reviewer | Chrome 插件 | 在 `code.fineres.com` 的 Bitbucket Pull Request 页面内打开审查面板，读取 PR 信息、diff 和项目上下文，并调用 DeepSeek 生成带结构化证据的代码审查建议；同时支持从面板打开飞书项目任务。 |
+| `codex-quota` | Codex Quota | 桌面应用 | 提供跨平台 Electron Codex 额度浮窗，支持托盘入口、额度详情、重置时间展示和主题切换。 |
 | `feishu-jump` | Feishu Task Jumper | Chrome 插件 | 输入飞书项目任务 key，例如 `f-7028807610`、`m-7040569864` 或纯数字任务号，快速打开对应任务详情页；也支持浏览器地址栏 `fs` 关键字跳转。 |
 | `group` | group | Chrome 插件 | 将页面保存到本地分组中，支持分组图标/颜色、快捷固定、内联重命名和批量打开，便于按工作上下文快速恢复一组相关页面。 |
 | `style` | Style Inspector | Chrome 插件 | 在任意页面叠加 DOM padding、margin、border、gap、尺寸、字体和颜色标注，支持点击/框选元素、分析自身或内部元素、按配置显示标注，并可点击标签切换右下角详情卡用于视觉验收和样式排查。 |
@@ -32,6 +33,7 @@
 
 ### 更新记录
 
+- 2026-09-09: 合并远端 `codex-quota` 桌面额度浮窗和 `feishu-jump` 跳转修复，README 补充桌面工具说明。
 - 2026-09-09: 清理仓库临时产物和旧流程文档，补充分支约定，并整理 `group` 与 `api-rewriter` 的主线改动。
 - 2026-08-31: 新增 `api-rewriter` Chrome 插件，支持按开关记录和拦截当前标签页 Fetch/XHR JSON、手动编辑、自动字段规则、请求体模板、浏览器本地规则库、持久接口过滤和 JSON 导入导出。
 - 2026-08-12: 使用 ponytail 精简 `task-link` 模板替换代码，并清理 `i18n-search-helper` 旧版安装包，仅保留当前 0.1.5 产物。

@@ -1,4 +1,4 @@
-const TASK_DETAIL_URL_TEMPLATE = 'https://project.feishu.cn/b2rl2h/issue/detail/{key}';
+const TASK_DETAIL_URL_TEMPLATE = 'https://project.feishu.cn/b2rl2h/{type}/detail/{key}';
 
 function validateKey(key) {
   if (String(key || '').trim().length === 0) {
@@ -21,7 +21,11 @@ function buildTaskUrl(key) {
     throw new Error(keyResult.message);
   }
 
-  return TASK_DETAIL_URL_TEMPLATE.replace('{key}', encodeURIComponent(normalizeTaskKey(key)));
+  const taskType = /^m-/i.test(String(key).trim()) ? 'story' : 'issue';
+
+  return TASK_DETAIL_URL_TEMPLATE
+    .replace('{type}', taskType)
+    .replace('{key}', encodeURIComponent(normalizeTaskKey(key)));
 }
 
 if (typeof module !== 'undefined') {

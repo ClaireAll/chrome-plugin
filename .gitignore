@@ -8,3 +8,5 @@ bitbucket-pr-ai-reviewer/local-default-settings.js
 .superpowers/
 mockups/
 style.zip
+todo/node_modules/
+todo/package-lock.json

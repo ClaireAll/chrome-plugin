@@ -88,6 +88,7 @@
   });
 
   installLocationChangeWatcher();
+  installOutsideCloseHandler();
   window.addEventListener("pagehide", () => {
     clearAllFeedbackImages();
   });
@@ -284,8 +285,26 @@
     clearCloseTimer();
   }
 
+  function installOutsideCloseHandler() {
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (!state.open || state.closing || state.dragging) return;
+
+        const target = event.target;
+        if (root.contains(target) || ballRoot.contains(target)) return;
+
+        closePanel();
+      },
+      true
+    );
+  }
+
   function togglePanel() {
-    if (state.open || state.closing) return;
+    if (state.open || state.closing) {
+      closePanel();
+      return;
+    }
 
     openPanel();
   }

@@ -460,6 +460,43 @@ button.group-icon-preview {
   display: inline-flex;
 }
 
+.add-page-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.add-page-popover {
+  right: 0;
+  left: auto;
+  width: 280px;
+}
+
+.add-page-popover label {
+  display: grid;
+  gap: 6px;
+}
+
+.add-page-popover label span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.add-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.add-page-actions button {
+  height: 32px;
+}
+
+.add-page-confirm {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+
 .move-picker-popover {
   right: 0;
   left: auto;

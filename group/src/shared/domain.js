@@ -79,10 +79,14 @@ export function addPageToGroup(data, request) {
   }
 
   const now = new Date().toISOString();
+  const groupId = String(request?.groupId || "").trim();
   const groupName = String(request?.groupName || DEFAULT_GROUP_NAME).trim() || DEFAULT_GROUP_NAME;
   const pageTitle = String(request?.pageTitle || "").trim() || cleanPageTitle("", url);
   const groups = source.groups.map(cloneGroup);
-  let group = groups.find((item) => item.name.toLowerCase() === groupName.toLowerCase());
+  let group = groupId ? groups.find((item) => item.id === groupId) : null;
+  if (!group) {
+    group = groups.find((item) => item.name.toLowerCase() === groupName.toLowerCase());
+  }
 
   if (!group) {
     group = {

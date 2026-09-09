@@ -1,4 +1,5 @@
 import {
+  addPageToGroup,
   deleteGroup,
   deletePage,
   movePageToGroup,
@@ -45,7 +46,10 @@ const state = {
   iconPopupGroupId: "",
   iconDraft: "",
   colorPopupGroupId: "",
-  movePopupPageId: ""
+  movePopupPageId: "",
+  addPagePopupOpen: false,
+  addPageName: "",
+  addPageUrl: ""
 };
 
 app.addEventListener("click", (event) => {
@@ -160,6 +164,10 @@ function renderManage() {
                   </div>
                 </div>
                 <div class="section-actions">
+                  <span class="add-page-wrap">
+                    ${renderIconButton("toggle-add-page", "plus", "添加页面", `data-group-id="${escapeAttribute(selected.id)}"`)}
+                    ${state.addPagePopupOpen ? renderAddPagePopover() : ""}
+                  </span>
                   ${renderIconButton("rename-group", "edit", "重命名", `data-group-id="${escapeAttribute(selected.id)}"`)}
                   ${renderIconButton("delete-group", "trash", "删除", `data-group-id="${escapeAttribute(selected.id)}"`, "danger")}
                 </div>
@@ -212,6 +220,25 @@ function renderColorPopover(groupId, value) {
         ${DEFAULT_GROUP_COLORS.map((color) => `
           <button type="button" class="color-option" data-action="group-color-option" data-group-id="${escapeAttribute(groupId)}" data-color="${escapeAttribute(color)}" style="--swatch-color: ${escapeAttribute(color)}" aria-label="${escapeAttribute(color)}"></button>
         `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderAddPagePopover() {
+  return `
+    <div class="picker-popover add-page-popover">
+      <label>
+        <span>名称：</span>
+        <input data-field="add-page-name" value="${escapeHtml(state.addPageName)}" placeholder="页面名称" autocomplete="off" />
+      </label>
+      <label>
+        <span>链接：</span>
+        <input data-field="add-page-url" value="${escapeHtml(state.addPageUrl)}" placeholder="https://example.com" autocomplete="off" />
+      </label>
+      <div class="add-page-actions">
+        <button type="button" data-action="cancel-add-page">取消</button>
+        <button type="button" class="add-page-confirm" data-action="confirm-add-page">确定</button>
       </div>
     </div>
   `;
@@ -298,6 +325,10 @@ function svgIcon(name) {
       <path d="m14 4 3 3-3 3"></path>
       <path d="M17 17H7"></path>
       <path d="m10 14-3 3 3 3"></path>
+    `,
+    plus: `
+      <path d="M12 5v14"></path>
+      <path d="M5 12h14"></path>
     `,
     sparkles: `
       <path d="M12 3 13.5 8.5 19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3Z"></path>
@@ -398,6 +429,9 @@ async function handleClick(event) {
   if (action === "select-group") selectGroup(target.dataset.groupId);
   if (action === "rename-group" || action === "edit-group-name") startGroupRename(target.dataset.groupId);
   if (action === "delete-group") await deleteSelectedGroup(target.dataset.groupId);
+  if (action === "toggle-add-page") toggleAddPagePopup(target.dataset.groupId);
+  if (action === "cancel-add-page") cancelAddPage();
+  if (action === "confirm-add-page") await confirmAddPage();
   if (action === "toggle-group-icon") toggleGroupIconPicker(target.dataset.groupId);
   if (action === "random-group-icon") await commitGroupIcon(target.dataset.groupId, pickRandom(DEFAULT_GROUP_ICONS));
   if (action === "group-icon-option") await commitGroupIcon(target.dataset.groupId, target.dataset.icon);
@@ -428,6 +462,12 @@ function handleInput(event) {
   }
   if (event.target.dataset.field === "page-name") {
     state.editingPageName = event.target.value;
+  }
+  if (event.target.dataset.field === "add-page-name") {
+    state.addPageName = event.target.value;
+  }
+  if (event.target.dataset.field === "add-page-url") {
+    state.addPageUrl = event.target.value;
   }
 }
 
@@ -496,6 +536,14 @@ async function handleKeydown(event) {
     event.preventDefault();
     cancelPageRename();
   }
+  if ((field === "add-page-name" || field === "add-page-url") && event.key === "Enter") {
+    event.preventDefault();
+    await confirmAddPage();
+  }
+  if ((field === "add-page-name" || field === "add-page-url") && event.key === "Escape") {
+    event.preventDefault();
+    cancelAddPage();
+  }
 }
 
 async function handleFocusOut(event) {
@@ -508,9 +556,13 @@ async function handleFocusOut(event) {
 }
 
 function handleDocumentClick(event) {
-  const hasOpenFloating = Boolean(state.iconPopupGroupId || state.colorPopupGroupId || state.movePopupPageId);
+  const hasOpenFloating = Boolean(
+    state.iconPopupGroupId || state.colorPopupGroupId || state.movePopupPageId || state.addPagePopupOpen
+  );
   if (!hasOpenFloating) return;
-  if (event.target.closest(".icon-editor-wrap, .color-editor-wrap, .move-menu-wrap, .picker-popover")) return;
+  if (event.target.closest(".icon-editor-wrap, .color-editor-wrap, .move-menu-wrap, .add-page-wrap, .picker-popover")) {
+    return;
+  }
   closeFloatingPanels();
   render();
 }
@@ -579,6 +631,62 @@ function cancelGroupRename() {
   render();
 }
 
+function toggleAddPagePopup(groupId) {
+  if (!state.data.groups.some((group) => group.id === groupId)) return;
+  const nextOpen = !state.addPagePopupOpen;
+  closeFloatingPanels();
+  state.editingGroupId = "";
+  state.editingPageId = "";
+  state.addPagePopupOpen = nextOpen;
+  state.addPageName = "";
+  state.addPageUrl = "";
+  render();
+  if (nextOpen) {
+    requestAnimationFrame(() => app.querySelector('[data-field="add-page-name"]')?.focus());
+  }
+}
+
+function cancelAddPage() {
+  closeAddPagePopup();
+  render();
+}
+
+async function confirmAddPage() {
+  const group = state.data.groups.find((item) => item.id === state.selectedGroupId);
+  if (!group) return;
+
+  const result = addPageToGroup(state.data, {
+    groupId: group.id,
+    groupName: group.name,
+    pageTitle: state.addPageName,
+    url: state.addPageUrl
+  });
+
+  if (result.status === "error") {
+    state.notice = result.message || "链接无效";
+    render();
+    return;
+  }
+
+  if (result.status === "duplicate") {
+    state.notice = "已存在该链接";
+    closeAddPagePopup();
+    render();
+    return;
+  }
+
+  if (!["saved", "moved"].includes(result.status)) {
+    state.notice = "添加失败";
+    render();
+    return;
+  }
+
+  state.data = result.data;
+  state.selectedGroupId = result.group?.id || group.id;
+  closeAddPagePopup();
+  await persistData(result.status === "moved" ? "页面已移动到当前分组" : "页面已添加");
+}
+
 async function commitGroupRename(groupId, value = state.editingGroupName) {
   if (state.editingGroupId !== groupId) return;
   const group = state.data.groups.find((item) => item.id === groupId);
@@ -630,9 +738,16 @@ function closePickers() {
   state.colorPopupGroupId = "";
 }
 
+function closeAddPagePopup() {
+  state.addPagePopupOpen = false;
+  state.addPageName = "";
+  state.addPageUrl = "";
+}
+
 function closeFloatingPanels() {
   closePickers();
   state.movePopupPageId = "";
+  closeAddPagePopup();
 }
 
 async function commitGroupIcon(groupId, value = state.iconDraft) {

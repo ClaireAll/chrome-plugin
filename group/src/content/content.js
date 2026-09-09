@@ -35,6 +35,8 @@
     draft: null,
     selectedGroupName: "",
     selectedGroupId: "",
+    activePreviewGroupName: "",
+    activePreviewGroupId: "",
     dragInfo: null,
     dropIndicatorTarget: null,
     editingPageId: "",
@@ -46,8 +48,8 @@
   root.id = "group-extension-root";
   root.innerHTML = `
     <div class="group-shell" data-side="right">
-      <button class="group-ball" type="button" title="group" aria-label="group">
-        <span class="group-ball-mark">g</span>
+      <button class="group-ball" type="button" aria-label="打开 group">
+        ${renderBallFolderIcon()}
       </button>
       <span class="group-recent-label"></span>
       <section class="group-panel" hidden>
@@ -56,12 +58,6 @@
           <p class="group-setup-copy">先选择或创建一个 JSON 文件，之后页面会保存到这个本地文件里。</p>
         </div>
         <div class="group-save-view">
-          <div class="group-field">
-            <div class="group-group-buttons" role="group" aria-label="选择分组"></div>
-            <div class="group-add-popover" hidden>
-              <input class="group-add-input" autocomplete="off" placeholder="新分组名" />
-            </div>
-          </div>
           <div class="group-page-save-row">
             <input class="group-page-input" autocomplete="off" />
             <button class="group-save-button" type="button" title="保存" aria-label="保存">
@@ -70,6 +66,12 @@
             <button class="group-panel-options" type="button" title="选项" aria-label="选项">
               ${renderOptionsIcon()}
             </button>
+          </div>
+          <div class="group-field">
+            <div class="group-group-buttons" role="group" aria-label="选择分组"></div>
+            <div class="group-add-popover" hidden>
+              <input class="group-add-input" autocomplete="off" placeholder="新分组名" />
+            </div>
           </div>
         </div>
         <div class="group-preview" hidden>
@@ -121,7 +123,7 @@
   tree.addEventListener("dragover", handleTreeDragOver);
   tree.addEventListener("drop", (event) => runSafely(handleTreeDrop(event)));
   tree.addEventListener("dragend", handleTreeDragEnd);
-  searchInput.addEventListener("input", () => renderTree(searchTree(state.data, searchInput.value)));
+  searchInput.addEventListener("input", () => renderTree());
   searchInput.addEventListener("keydown", handleSearchKeydown);
   pageInput.addEventListener("keydown", handleInputKeydown);
   document.addEventListener("pointerdown", handleDocumentPointerDown);
@@ -130,13 +132,6 @@
       runSafely(refreshState(false));
     }
   });
-  shell.addEventListener("mouseenter", () => shell.classList.remove("group-edge-hidden"));
-  shell.addEventListener("mouseleave", () => {
-    if (!state.isOpen && state.settings.edgeHide === true) {
-      shell.classList.add("group-edge-hidden");
-    }
-  });
-
   window.addEventListener("unhandledrejection", (event) => {
     event.preventDefault();
     showToast(event.reason?.message || "group 操作失败");
@@ -182,14 +177,18 @@
         }
       });
       state.draft = draftResponse?.draft || { title: document.title, url: location.href };
-      state.selectedGroupName = state.settings.recentGroupName || state.data.groups[0]?.name || "";
+      state.selectedGroupName = "";
+      state.selectedGroupId = "";
+      state.activePreviewGroupName = "";
+      state.activePreviewGroupId = "";
+      searchInput.value = "";
       pageInput.value = state.draft.title || document.title || location.hostname;
     }
 
     syncSelectedGroupSelection();
     renderGroupButtons();
     renderQuickAccess();
-    renderTree(searchTree(state.data, searchInput.value));
+    renderTree();
   }
 
   function applySettings() {
@@ -238,34 +237,40 @@
     if (!state.fileBound || !groups.length) {
       state.selectedGroupId = "";
       state.selectedGroupName = "";
+      state.activePreviewGroupId = "";
+      state.activePreviewGroupName = "";
       return;
     }
 
-    const selectedById = state.selectedGroupId
-      ? groups.find((group) => group.id === state.selectedGroupId)
-      : null;
+    syncGroupReference("selectedGroupId", "selectedGroupName");
+    syncGroupReference("activePreviewGroupId", "activePreviewGroupName");
+  }
+
+  // 同步分组引用，保留未保存的新分组名称，但不自动选中第一个分组。
+  function syncGroupReference(idKey, nameKey) {
+    const groups = Array.isArray(state.data?.groups) ? state.data.groups : [];
+    const groupId = String(state[idKey] || "").trim();
+    const groupName = String(state[nameKey] || "").trim();
+    const selectedById = groupId ? groups.find((group) => group.id === groupId) : null;
     if (selectedById) {
-      state.selectedGroupName = String(selectedById.name || "").trim();
+      state[idKey] = selectedById.id || "";
+      state[nameKey] = String(selectedById.name || "").trim();
       return;
     }
 
-    const selectedName = String(state.selectedGroupName || "").trim();
-    const selectedByName = selectedName
-      ? groups.find((group) => String(group.name || "").trim() === selectedName)
+    const selectedByName = groupName
+      ? groups.find((group) => String(group.name || "").trim().toLowerCase() === groupName.toLowerCase())
       : null;
     if (selectedByName) {
-      state.selectedGroupId = selectedByName.id || "";
-      state.selectedGroupName = String(selectedByName.name || "").trim();
+      state[idKey] = selectedByName.id || "";
+      state[nameKey] = String(selectedByName.name || "").trim();
       return;
     }
 
-    const recentName = String(state.settings.recentGroupName || "").trim();
-    const recentGroup = recentName
-      ? groups.find((group) => String(group.name || "").trim() === recentName)
-      : null;
-    const fallback = recentGroup || groups[0];
-    state.selectedGroupId = fallback?.id || "";
-    state.selectedGroupName = String(fallback?.name || "").trim();
+    if (groupId) {
+      state[idKey] = "";
+      state[nameKey] = "";
+    }
   }
 
   function renderGroupButtons() {
@@ -275,22 +280,22 @@
       return;
     }
 
-    const selectedName = state.selectedGroupName.trim();
-    const selectedNameLower = selectedName.toLowerCase();
-    const selectedGroupId = state.selectedGroupId;
+    const activeName = state.activePreviewGroupName.trim();
+    const activeNameLower = activeName.toLowerCase();
+    const activeGroupId = state.activePreviewGroupId;
     const items = groups
       .map((group) => ({ ...group, name: String(group.name || "").trim() }))
       .filter((group) => group.name);
     const hasSelectedGroup = items.some(
-      (group) => (selectedGroupId && group.id === selectedGroupId) || group.name.toLowerCase() === selectedNameLower
+      (group) => (activeGroupId && group.id === activeGroupId) || group.name.toLowerCase() === activeNameLower
     );
-    if (selectedName && !hasSelectedGroup) {
-      items.push({ id: `draft-${selectedName}`, name: selectedName, icon: "", color: "" });
+    if (activeName && !hasSelectedGroup) {
+      items.push({ id: `draft-${activeName}`, name: activeName, icon: "", color: "" });
     }
 
     groupButtons.innerHTML = [
       ...items.map((group) => {
-        const active = selectedGroupId ? group.id === selectedGroupId : group.name.toLowerCase() === selectedNameLower;
+        const active = activeGroupId ? group.id === activeGroupId : group.name.toLowerCase() === activeNameLower;
         const color = getGroupColor(group);
         return `
           <button class="group-group-chip ${active ? "group-group-chip-active" : ""}" type="button" data-group-id="${escapeAttribute(group.id)}" data-group-name="${escapeAttribute(group.name)}" title="${escapeAttribute(group.name)}" style="--group-item-color: ${escapeAttribute(color)}">
@@ -341,9 +346,27 @@
     const group = (state.data.groups || []).find(
       (item) => (groupId && item.id === groupId) || String(item.name || "").trim() === selectedName
     );
-    state.selectedGroupId = group?.id || "";
-    state.selectedGroupName = group ? String(group.name || "").trim() : selectedName;
+    const nextGroupId = group?.id || "";
+    const nextGroupName = group ? String(group.name || "").trim() : selectedName;
+    const hadSearchQuery = Boolean(String(searchInput.value || "").trim());
+    const isSameGroup = nextGroupId
+      ? state.activePreviewGroupId === nextGroupId
+      : state.activePreviewGroupName.trim().toLowerCase() === nextGroupName.toLowerCase();
+    searchInput.value = "";
+
+    if (isSameGroup && !hadSearchQuery) {
+      state.selectedGroupId = "";
+      state.selectedGroupName = "";
+      state.activePreviewGroupId = "";
+      state.activePreviewGroupName = "";
+    } else {
+      state.selectedGroupId = nextGroupId;
+      state.selectedGroupName = nextGroupName;
+      state.activePreviewGroupId = nextGroupId;
+      state.activePreviewGroupName = nextGroupName;
+    }
     renderGroupButtons();
+    renderTree();
   }
 
   async function saveCurrentPage() {
@@ -405,7 +428,12 @@
     tree.innerHTML = "";
     if (!state.fileBound) return;
 
-    if (!groups.length) {
+    const visibleGroups = getVisiblePreviewGroups(groups);
+    if (!visibleGroups.length) {
+      if (!String(searchInput.value || "").trim() && !state.activePreviewGroupName.trim()) {
+        renderPreviewPrompt();
+        return;
+      }
       const empty = document.createElement("div");
       empty.className = "group-empty";
       empty.textContent = "没有匹配结果";
@@ -413,10 +441,10 @@
       return;
     }
 
-    for (const group of groups) {
+    for (const group of visibleGroups) {
       const groupNode = document.createElement("section");
-      const expanded = state.expandedGroupIds.includes(group.id);
-      groupNode.className = `group-node${expanded ? "" : " group-node-collapsed"}`;
+      const expanded = true;
+      groupNode.className = "group-node";
       groupNode.draggable = true;
       groupNode.dataset.dragKind = "group";
       groupNode.dataset.groupId = group.id;
@@ -449,11 +477,11 @@
       }).join("");
       groupNode.innerHTML = `
         <div class="group-node-header">
-          <button class="group-node-main" type="button" data-group-id="${escapeAttribute(group.id)}" aria-expanded="${String(expanded)}">
+          <div class="group-node-main" data-group-id="${escapeAttribute(group.id)}" aria-expanded="${String(expanded)}">
             <span class="group-node-icon" aria-hidden="true">${escapeHtml(getGroupIcon(group))}</span>
             <span class="group-node-name">${escapeHtml(group.name)}</span>
             <span class="group-node-subtitle">（${group.pages.length}个页面）</span>
-          </button>
+          </div>
           <button class="group-open-all" type="button" data-group-id="${escapeAttribute(group.id)}" title="打开全部" aria-label="打开全部">${renderOpenAllIcon()}</button>
         </div>
         <div class="group-pages">${pageRows || `<div class="group-empty">这个分组还没有页面</div>`}</div>
@@ -463,21 +491,51 @@
     }
   }
 
-  function handleTreeClick(event) {
-    const toggleButton = event.target.closest?.(".group-node-main");
-    if (toggleButton && tree.contains(toggleButton)) {
-      const groupNode = toggleButton.closest(".group-node");
-      const collapsed = groupNode.classList.toggle("group-node-collapsed");
-      const groupId = toggleButton.dataset.groupId;
-      state.expandedGroupIds = collapsed
-        ? state.expandedGroupIds.filter((id) => id !== groupId)
-        : state.expandedGroupIds.includes(groupId)
-          ? state.expandedGroupIds
-          : [...state.expandedGroupIds, groupId];
-      toggleButton.setAttribute("aria-expanded", String(!collapsed));
-      return;
-    }
+  // 根据搜索词和当前选中的分组，计算首页下方真正需要展示的分组。
+  function getVisiblePreviewGroups(groups) {
+    const query = String(searchInput.value || "").trim();
+    if (query) return groups || searchTree(state.data, query);
 
+    const activeGroup = getActivePreviewGroup();
+    return activeGroup ? [activeGroup] : [];
+  }
+
+  // 获取当前分组详情；未保存的新分组会以空分组形式展示。
+  function getActivePreviewGroup() {
+    const groups = Array.isArray(state.data?.groups) ? state.data.groups : [];
+    const activeGroupId = String(state.activePreviewGroupId || "").trim();
+    const activeGroupName = String(state.activePreviewGroupName || "").trim();
+    const groupById = activeGroupId ? groups.find((group) => group.id === activeGroupId) : null;
+    if (groupById) return groupById;
+
+    const groupByName = activeGroupName
+      ? groups.find((group) => String(group.name || "").trim().toLowerCase() === activeGroupName.toLowerCase())
+      : null;
+    if (groupByName) return groupByName;
+    if (!activeGroupName) return null;
+
+    return {
+      id: `draft-${activeGroupName}`,
+      name: activeGroupName,
+      icon: "",
+      color: "",
+      pages: []
+    };
+  }
+
+  // 渲染默认轻提示，避免首页下方自动铺开所有分组。
+  function renderPreviewPrompt() {
+    const empty = document.createElement("div");
+    empty.className = "group-preview-empty";
+    empty.innerHTML = `
+      <span class="group-preview-empty-icon">${renderFolderHintIcon()}</span>
+      <span class="group-preview-empty-main">选择一个分组查看页面</span>
+      <span class="group-preview-empty-sub">也可以直接搜索，结果会按分组聚合显示</span>
+    `;
+    tree.appendChild(empty);
+  }
+
+  function handleTreeClick(event) {
     const renamePageButton = event.target.closest?.(".group-rename-page");
     if (renamePageButton && tree.contains(renamePageButton)) {
       event.stopPropagation?.();
@@ -610,9 +668,9 @@
     if (response?.ok) {
       state.data = response.data || state.data;
       renderQuickAccess();
-      renderTree(searchTree(state.data, searchInput.value));
+      renderTree();
     } else {
-      renderTree(searchTree(state.data, searchInput.value));
+      renderTree();
     }
     showToast(response?.ok ? `已打开 ${response.opened} 个页面` : response?.message || "打开失败");
   }
@@ -625,7 +683,7 @@
     if (response?.ok) {
       state.data = response.data || state.data;
       renderQuickAccess();
-      renderTree(searchTree(state.data, searchInput.value));
+      renderTree();
     }
     showToast(response?.ok ? "已打开页面" : response?.message || "打开失败");
   }
@@ -638,7 +696,7 @@
     if (response?.ok) {
       state.data = response.data || state.data;
       renderQuickAccess();
-      renderTree(searchTree(state.data, searchInput.value));
+      renderTree();
     }
     showToast(response?.ok ? (pinned ? "已固定到快捷访问" : "已取消固定") : response?.message || "操作失败");
   }
@@ -651,7 +709,7 @@
     if (response?.ok) {
       state.data = response.data || state.data;
       renderQuickAccess();
-      renderTree(searchTree(state.data, searchInput.value));
+      renderTree();
     }
     showToast(response?.ok ? "分组顺序已更新" : response?.message || "排序失败");
   }
@@ -664,7 +722,7 @@
     if (response?.ok) {
       state.data = response.data || state.data;
       renderQuickAccess();
-      renderTree(searchTree(state.data, searchInput.value));
+      renderTree();
     }
     showToast(response?.ok ? "页面顺序已更新" : response?.message || "排序失败");
   }
@@ -673,7 +731,7 @@
     if (!pageId) return;
     state.editingPageId = pageId;
     state.editingPageName = currentName || "";
-    renderTree(searchTree(state.data, searchInput.value));
+    renderTree();
     requestAnimationFrame(() => {
       const input = tree.querySelector(`.group-page-title-input[data-page-id="${cssEscape(pageId)}"]`);
       input?.focus();
@@ -684,7 +742,7 @@
   function cancelRenamePage() {
     state.editingPageId = "";
     state.editingPageName = "";
-    renderTree(searchTree(state.data, searchInput.value));
+    renderTree();
   }
 
   async function commitRenamePage(pageId, value) {
@@ -696,7 +754,7 @@
     state.editingPageId = "";
     state.editingPageName = "";
     if (!name || name === getPageDisplayName(currentPage)) {
-      renderTree(searchTree(state.data, searchInput.value));
+      renderTree();
       return;
     }
     const response = await sendMessage({
@@ -706,7 +764,7 @@
     if (response?.ok) {
       state.data = response.data || state.data;
       renderQuickAccess();
-      renderTree(searchTree(state.data, searchInput.value));
+      renderTree();
     }
     showToast(response?.ok ? "已重命名页面" : response?.message || "重命名失败");
   }
@@ -740,7 +798,7 @@
     if (response?.ok) {
       state.data = response.data || state.data;
       renderQuickAccess();
-      renderTree(searchTree(state.data, searchInput.value));
+      renderTree();
     }
     showToast(response?.ok ? "已移除页面" : response?.message || "移除失败");
   }
@@ -862,14 +920,8 @@
 
   function showToast(message) {
     window.clearTimeout(showToast.timer);
-    toast.textContent = message || "";
-    toast.hidden = !message;
-    if (message) {
-      showToast.timer = window.setTimeout(() => {
-        toast.textContent = "";
-        toast.hidden = true;
-      }, 1800);
-    }
+    toast.textContent = "";
+    toast.hidden = true;
   }
 
   function searchTree(data, query) {
@@ -934,6 +986,26 @@
     const color = sanitizeColor(group?.color || group?.groupColor);
     if (color) return color;
     return pickStable(DEFAULT_GROUP_COLORS, group?.id || group?.groupId || group?.name || group?.groupName);
+  }
+
+  // 渲染悬浮入口的大文件夹图标，颜色由主题色变量统一控制。
+  function renderBallFolderIcon() {
+    return `
+      <svg class="group-ball-icon" viewBox="0 0 48 40" aria-hidden="true">
+        <path d="M4 9a5 5 0 0 1 5-5h10.4a5 5 0 0 1 3.9 1.86L25.82 9H39a5 5 0 0 1 5 5v17a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z"></path>
+        <path class="group-ball-icon-crease" d="M4 13h40"></path>
+      </svg>
+    `;
+  }
+
+  // 渲染首页默认提示态的小文件夹图标。
+  function renderFolderHintIcon() {
+    return `
+      <svg class="group-preview-empty-svg" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h6l2 2h8v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path>
+        <path d="M4 7V6a2 2 0 0 1 2-2h4l2 3"></path>
+      </svg>
+    `;
   }
 
   function renderAddIcon() {

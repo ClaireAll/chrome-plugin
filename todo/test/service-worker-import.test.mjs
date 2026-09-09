@@ -8,7 +8,7 @@ test("service worker module imports without Chrome APIs during syntax checks", a
     notifications: { onClicked: { addListener() {} } }
   };
 
-  const module = await import(`../src/background/service-worker.js?test=${Date.now()}`);
+  const module = await import(`../src/background/service-worker.ts?test=${Date.now()}`);
 
   assert.equal(typeof module.handleMessage, "function");
   assert.equal(typeof module.handleAlarm, "function");

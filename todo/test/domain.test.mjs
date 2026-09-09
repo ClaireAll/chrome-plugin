@@ -17,7 +17,7 @@ import {
   updateCompletedRecordText,
   updateTodoColor,
   updateTodoText
-} from "../src/shared/domain.js";
+} from "../src/shared/domain.ts";
 
 const settings = {
   colorPresets: ["#ffffff", "#fef3c7", "#dcfce7"],

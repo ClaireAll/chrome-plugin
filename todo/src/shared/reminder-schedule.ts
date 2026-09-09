@@ -1,15 +1,15 @@
 const ALARM_PREFIX = "todo-reminder:";
 
-export function alarmNameForTodo(id) {
+export function alarmNameForTodo(id: unknown): string {
   return `${ALARM_PREFIX}${String(id || "")}`;
 }
 
-export function todoIdFromAlarmName(name) {
+export function todoIdFromAlarmName(name: unknown): string {
   const text = String(name || "");
   return text.startsWith(ALARM_PREFIX) ? text.slice(ALARM_PREFIX.length) : "";
 }
 
-export function isReminderOnTime(reminderAt, handledAt = new Date().toISOString(), graceMs = 120000) {
+export function isReminderOnTime(reminderAt: string, handledAt = new Date().toISOString(), graceMs = 120000): boolean {
   const reminderTime = Date.parse(reminderAt);
   const handledTime = Date.parse(handledAt);
   const delta = handledTime - reminderTime;

@@ -7,13 +7,16 @@ import {
   setTodoReminder,
   updateTodoColor,
   updateTodoText
-} from "../shared/domain.js";
-import * as completedDataLocation from "../shared/data-location.js";
-import { failure, MESSAGE_TYPES, success } from "../shared/messages.js";
-import { alarmNameForTodo, isReminderOnTime, todoIdFromAlarmName } from "../shared/reminder-schedule.js";
-import { loadTodoItems, loadTodoState, saveSettings, saveTodoItems } from "../shared/storage.js";
+} from "../shared/domain.ts";
+import * as completedDataLocation from "../shared/data-location.ts";
+import { failure, MESSAGE_TYPES, success } from "../shared/messages.ts";
+import { alarmNameForTodo, isReminderOnTime, todoIdFromAlarmName } from "../shared/reminder-schedule.ts";
+import { loadTodoItems, loadTodoState, saveSettings, saveTodoItems } from "../shared/storage.ts";
 
-const RECURRING_ALARM_PREFIX = "todo-recurring:";
+type ExtensionMessage = {
+  type?: string;
+  payload?: Record<string, any>;
+};
 
 let completedStoreOverride = null;
 let mutationQueue = Promise.resolve();
@@ -37,37 +40,36 @@ if (globalThis.chrome?.notifications?.onClicked) {
   chrome.notifications.onClicked.addListener(() => {});
 }
 
-if (globalThis.chrome?.runtime?.onStartup) {
-  chrome.runtime.onStartup.addListener(() => {
-    scheduleRecurringTasks().catch(() => {});
-  });
-}
-
-if (globalThis.chrome?.runtime?.onInstalled) {
-  chrome.runtime.onInstalled.addListener(() => {
-    scheduleRecurringTasks().catch(() => {});
-  });
-}
-
 export function __setCompletedStoreForTest(store) {
   completedStoreOverride = store;
 }
 
-export async function handleMessage(message = {}, sender) {
+export async function handleMessage(message: ExtensionMessage = {}, sender?: chrome.runtime.MessageSender) {
   if (isMutationMessage(message.type)) return enqueueMutation(() => handleMessageNow(message, sender));
   return handleMessageNow(message, sender);
 }
 
-async function handleMessageNow(message = {}, sender) {
+async function handleMessageNow(message: ExtensionMessage = {}, sender?: chrome.runtime.MessageSender) {
   const payload = message.payload || {};
 
   switch (message.type) {
     case MESSAGE_TYPES.GET_STATE: {
       const state = await loadTodoState();
-      return success({ ...state, completedStatus: await completedStore().getCompletedStatus() });
+      return success({
+        ...state,
+        ...(payload.includeCompletedStatus === false
+          ? {}
+          : { completedStatus: await completedStore().getCompletedStatus() })
+      });
     }
     case MESSAGE_TYPES.ADD_TODO:
-      return saveItems(addTodoItem(await loadTodoItems(), payload.text, await loadSettingsForTodo()));
+      return saveItems(addTodoItem(
+        await loadTodoItems(),
+        payload.text,
+        await loadSettingsForTodo(),
+        undefined,
+        { position: payload.position }
+      ));
     case MESSAGE_TYPES.UPDATE_TODO_TEXT:
       return saveItems(updateTodoText(await loadTodoItems(), payload.id, payload.text));
     case MESSAGE_TYPES.UPDATE_TODO_COLOR:
@@ -83,10 +85,7 @@ async function handleMessageNow(message = {}, sender) {
     case MESSAGE_TYPES.COMPLETE_TODO:
       return completeTodo(payload);
     case MESSAGE_TYPES.UPDATE_SETTINGS:
-      return updateSettings(payload);
-    case MESSAGE_TYPES.OPEN_OPTIONS:
-      await chrome.runtime.openOptionsPage();
-      return success();
+      return success({ settings: await saveSettings(payload) });
     case MESSAGE_TYPES.GET_COMPLETED_STATUS:
       return completedStore().getCompletedStatus();
     case MESSAGE_TYPES.READ_COMPLETED_DATA:
@@ -107,9 +106,6 @@ export async function handleAlarm(alarm, handledAt = new Date().toISOString()) {
 }
 
 async function handleAlarmNow(alarm, handledAt) {
-  const recurringTaskId = recurringTaskIdFromAlarmName(alarm?.name);
-  if (recurringTaskId) return handleRecurringTaskAlarm(recurringTaskId, alarm, handledAt);
-
   const id = todoIdFromAlarmName(alarm?.name);
   if (!id) return;
 
@@ -161,12 +157,6 @@ async function saveItems(items) {
   return success({ items: await saveTodoItems(items) });
 }
 
-async function updateSettings(payload) {
-  const settings = await saveSettings(payload);
-  if (Object.hasOwn(payload || {}, "recurringTasks")) await syncRecurringTaskAlarms(settings.recurringTasks);
-  return success({ settings });
-}
-
 async function updateReminder(payload) {
   const items = setTodoReminder(await loadTodoItems(), payload.id, payload.reminderAt);
   const item = items.find((todo) => todo.id === payload.id);
@@ -201,111 +191,6 @@ async function completeTodo(payload) {
 
   receipt = completionReceiptFor(item, payload.completedAt);
   return completeTodoItem(items, item, receipt);
-}
-
-async function handleRecurringTaskAlarm(taskId, alarm, handledAt) {
-  const state = await loadTodoState();
-  const task = (state.settings.recurringTasks || []).find((item) => item.id === taskId);
-  if (!task) {
-    await chrome.alarms.clear(recurringTaskAlarmName(taskId));
-    return;
-  }
-
-  const scheduledTime = Number(alarm?.scheduledTime);
-  const occurrenceTime = Number.isFinite(scheduledTime) ? new Date(scheduledTime) : new Date(handledAt);
-  const runKey = recurringTaskRunKey(task, occurrenceTime);
-  const nextRecurringTasks = state.settings.recurringTasks.map((item) => (
-    item.id === task.id ? { ...item, lastRunKey: runKey } : item
-  ));
-
-  if (task.lastRunKey !== runKey) {
-    await saveTodoItems(addTodoItem(state.items, task.text, state.settings, handledAt));
-  }
-
-  const settings = await saveSettings({ recurringTasks: nextRecurringTasks });
-  const nextTask = (settings.recurringTasks || []).find((item) => item.id === task.id);
-  if (nextTask) await scheduleRecurringTask(nextTask, new Date(occurrenceTime.getTime() + 1000));
-}
-
-async function scheduleRecurringTasks() {
-  if (!chrome.alarms?.create) return;
-  const state = await loadTodoState();
-  await syncRecurringTaskAlarms(state.settings.recurringTasks);
-}
-
-async function syncRecurringTaskAlarms(recurringTasks = []) {
-  if (!chrome.alarms?.getAll) return;
-  const alarms = await chrome.alarms.getAll();
-  await Promise.all((alarms || [])
-    .filter((alarm) => String(alarm.name || "").startsWith(RECURRING_ALARM_PREFIX))
-    .map((alarm) => chrome.alarms.clear(alarm.name)));
-  await Promise.all((recurringTasks || []).map((task) => scheduleRecurringTask(task)));
-}
-
-async function scheduleRecurringTask(task, from = new Date()) {
-  const nextTime = nextRecurringTaskTime(task, from);
-  if (!nextTime) return;
-  await chrome.alarms.create(recurringTaskAlarmName(task.id), { when: nextTime.getTime() });
-}
-
-function nextRecurringTaskTime(task, from = new Date()) {
-  const [hour, minute] = String(task.time || "").split(":").map(Number);
-  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
-  if (task.type === "workday") return nextWorkdayTaskTime(hour, minute, from);
-  if (task.type === "weekly") return nextWeeklyTaskTime(Number(task.weekday), hour, minute, from);
-  return nextMonthlyTaskTime(Number(task.monthDay), hour, minute, from);
-}
-
-function nextWorkdayTaskTime(hour, minute, from) {
-  const candidate = new Date(from);
-  candidate.setHours(hour, minute, 0, 0);
-  if (candidate <= from) candidate.setDate(candidate.getDate() + 1);
-  while (candidate.getDay() === 0 || candidate.getDay() === 6) {
-    candidate.setDate(candidate.getDate() + 1);
-  }
-  return candidate;
-}
-
-function nextWeeklyTaskTime(weekday, hour, minute, from) {
-  if (!Number.isInteger(weekday) || weekday < 1 || weekday > 7) return null;
-  const currentWeekday = from.getDay() === 0 ? 7 : from.getDay();
-  const daysAhead = (weekday - currentWeekday + 7) % 7;
-  const candidate = new Date(from);
-  candidate.setDate(from.getDate() + daysAhead);
-  candidate.setHours(hour, minute, 0, 0);
-  if (candidate <= from) candidate.setDate(candidate.getDate() + 7);
-  return candidate;
-}
-
-function nextMonthlyTaskTime(monthDay, hour, minute, from) {
-  if (!Number.isInteger(monthDay) || monthDay < 1 || monthDay > 31) return null;
-  const candidate = monthlyCandidate(from.getFullYear(), from.getMonth(), monthDay, hour, minute);
-  if (candidate > from) return candidate;
-  return monthlyCandidate(from.getFullYear(), from.getMonth() + 1, monthDay, hour, minute);
-}
-
-function monthlyCandidate(year, month, monthDay, hour, minute) {
-  const lastDay = new Date(year, month + 1, 0).getDate();
-  return new Date(year, month, Math.min(monthDay, lastDay), hour, minute, 0, 0);
-}
-
-function recurringTaskAlarmName(id) {
-  return `${RECURRING_ALARM_PREFIX}${String(id || "")}`;
-}
-
-function recurringTaskIdFromAlarmName(name) {
-  const text = String(name || "");
-  return text.startsWith(RECURRING_ALARM_PREFIX) ? text.slice(RECURRING_ALARM_PREFIX.length) : "";
-}
-
-function recurringTaskRunKey(task, date) {
-  const value = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
-  const datePart = `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
-  return `${task.type}:${task.id}:${datePart}:${task.time}`;
-}
-
-function pad2(value) {
-  return String(value).padStart(2, "0");
 }
 
 async function completeTodoItem(items, item, receipt) {

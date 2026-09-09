@@ -7,7 +7,7 @@ test("completed file store creates and writes minimal completed JSON", async () 
   globalThis.showSaveFilePicker = async () => createHandle("completed.json", "", writes);
   globalThis.chrome = createChromeStorage().chrome;
 
-  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-create`);
+  const store = await import(`../src/shared/completed-file-store.ts?test=${Date.now()}-create`);
   const createResult = await store.createCompletedJsonFile({ fileName: "todo-completed.json" });
 
   assert.equal(createResult.ok, true);
@@ -27,7 +27,7 @@ test("completed file store reports parse errors without overwriting bad JSON", a
   globalThis.showOpenFilePicker = async () => [createHandle("bad.json", "{bad", writes)];
   globalThis.chrome = createChromeStorage().chrome;
 
-  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-bad`);
+  const store = await import(`../src/shared/completed-file-store.ts?test=${Date.now()}-bad`);
   const result = await store.pickCompletedJsonFile();
 
   assert.equal(result.ok, false);
@@ -41,7 +41,7 @@ test("completed file store appends matching completed records from separate todo
   globalThis.showSaveFilePicker = async () => createHandle("completed.json", "", writes);
   globalThis.chrome = createChromeStorage().chrome;
 
-  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-duplicate-records`);
+  const store = await import(`../src/shared/completed-file-store.ts?test=${Date.now()}-duplicate-records`);
   await store.createCompletedJsonFile();
   await store.appendCompletedRecordToFile("Task A", "2026-07-23T09:30:00.000Z");
   await store.appendCompletedRecordToFile("Task A", "2026-07-23T09:30:00.000Z");
@@ -62,7 +62,7 @@ test("invalid selected JSON preserves an existing completed-file binding", async
   const chromeStorage = createChromeStorage();
   globalThis.chrome = chromeStorage.chrome;
 
-  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-invalid-picker`);
+  const store = await import(`../src/shared/completed-file-store.ts?test=${Date.now()}-invalid-picker`);
   await store.createCompletedJsonFile();
   const originalMeta = { ...chromeStorage.storage.todoCompletedFileMeta };
 
@@ -82,7 +82,7 @@ test("failed completed-file creation preserves an existing binding", async () =>
   const chromeStorage = createChromeStorage();
   globalThis.chrome = chromeStorage.chrome;
 
-  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-failed-create`);
+  const store = await import(`../src/shared/completed-file-store.ts?test=${Date.now()}-failed-create`);
   await store.createCompletedJsonFile();
   const originalMeta = { ...chromeStorage.storage.todoCompletedFileMeta };
   globalThis.showSaveFilePicker = async () => failing;
@@ -106,7 +106,7 @@ test("picked completed file must be writable before replacing an existing bindin
   const chromeStorage = createChromeStorage();
   globalThis.chrome = chromeStorage.chrome;
 
-  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-readonly-picker`);
+  const store = await import(`../src/shared/completed-file-store.ts?test=${Date.now()}-readonly-picker`);
   await store.createCompletedJsonFile();
   const originalMeta = { ...chromeStorage.storage.todoCompletedFileMeta };
 
@@ -126,7 +126,7 @@ test("completed-file binding storage failure preserves the existing handle and m
   const chromeStorage = createChromeStorage();
   globalThis.chrome = chromeStorage.chrome;
 
-  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-storage-failure`);
+  const store = await import(`../src/shared/completed-file-store.ts?test=${Date.now()}-storage-failure`);
   await store.createCompletedJsonFile();
   const originalMeta = { ...chromeStorage.storage.todoCompletedFileMeta };
   chromeStorage.failSetWhen((value) => value.todoCompletedFileMeta?.fileName === "candidate.json");
@@ -152,7 +152,7 @@ test("completed append writes back to the same handle read even if binding chang
   globalThis.showSaveFilePicker = async () => first;
   globalThis.chrome = createChromeStorage().chrome;
 
-  const store = await import(`../src/shared/completed-file-store.js?test=${Date.now()}-fixed-handle`);
+  const store = await import(`../src/shared/completed-file-store.ts?test=${Date.now()}-fixed-handle`);
   await store.createCompletedJsonFile();
   first.setText(JSON.stringify({
     version: 1,

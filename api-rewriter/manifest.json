@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "API Rewriter",
+  "description": "Record, filter, and rewrite Fetch/XHR JSON requests in the current tab from a Chrome Side Panel.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "118",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": ["debugger", "sidePanel", "storage", "tabs", "activeTab"],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    },
+    "default_title": "打开 API Rewriter"
+  }
+}

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API Rewriter</title>
+    <link rel="stylesheet" href="./sidepanel.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Network override</p>
+          <h1>API Rewriter</h1>
+        </div>
+        <button id="reconnectButton" class="button button-quiet" type="button" hidden>重新连接</button>
+      </header>
+
+      <div id="statusMessage" class="status-message" role="status" aria-live="polite"></div>
+      <section id="storageBar" class="file-bar" aria-label="规则数据存储"></section>
+
+      <section id="recordingControl" class="recording-control" aria-label="接口记录控制">
+        <div class="recording-summary">
+          <span id="recordingDot" class="recording-dot" aria-hidden="true"></span>
+          <div>
+            <strong id="recordingTitle">接口记录已停止</strong>
+            <p id="recordingDescription">开启后才会记录、拦截和应用自动规则。</p>
+          </div>
+        </div>
+        <label class="master-switch">
+          <span class="sr-only">开启接口记录</span>
+          <input id="recordingToggle" type="checkbox" role="switch" aria-label="开启接口记录" />
+          <span class="master-switch-track" aria-hidden="true"></span>
+        </label>
+      </section>
+
+      <nav id="mainTabs" class="main-tabs" role="tablist" aria-label="主要视图">
+        <button id="liveTab" class="main-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="liveView">实时请求</button>
+        <button id="savedTab" class="main-tab" type="button" role="tab" aria-selected="false" aria-controls="savedView">已保存 <span id="savedCount" class="tab-count">0</span></button>
+      </nav>
+
+      <main>
+        <section id="liveView" class="view" role="tabpanel" aria-labelledby="liveTab">
+          <div id="pendingBanner" class="pending-banner" hidden>
+            <div>
+              <strong id="pendingBannerTitle">有请求等待处理</strong>
+              <span id="pendingBannerMeta"></span>
+            </div>
+            <button id="openPendingButton" class="button button-warning" type="button">立即处理</button>
+          </div>
+
+          <div class="toolbar">
+            <label class="search-field" for="liveSearch">
+              <span class="sr-only">筛选实时请求</span>
+              <input id="liveSearch" type="search" placeholder="筛选 Method 或完整 URL" autocomplete="off" />
+            </label>
+            <button id="clearRequestsButton" class="button button-quiet" type="button">清空</button>
+          </div>
+
+          <div id="liveEmpty" class="empty-state">
+            <strong id="liveEmptyTitle">接口记录尚未开启</strong>
+            <p id="liveEmptyDescription">开启后才会接收当前页面的 Fetch/XHR 请求。</p>
+            <button id="startRecordingButton" class="button button-primary empty-action" type="button">开启接口记录</button>
+          </div>
+          <ul id="requestList" class="request-list" aria-label="实时请求列表"></ul>
+        </section>
+
+        <section id="savedView" class="view" role="tabpanel" aria-labelledby="savedTab" hidden>
+          <div id="savedContent">
+            <div class="saved-toolbar">
+              <div class="subtabs" role="group" aria-label="已保存内容类型">
+                <button id="rulesSubtab" class="subtab is-active" type="button" aria-pressed="true">替换规则 <span id="ruleCount">0</span></button>
+                <button id="templatesSubtab" class="subtab" type="button" aria-pressed="false">请求体模板 <span id="templateCount">0</span></button>
+                <button id="filtersSubtab" class="subtab" type="button" aria-pressed="false">接口过滤 <span id="filterCount">0</span></button>
+              </div>
+              <label class="search-field" for="savedSearch">
+                <span class="sr-only">筛选已保存内容</span>
+                <input id="savedSearch" type="search" placeholder="搜索标题或完整 URL" autocomplete="off" />
+              </label>
+            </div>
+            <div id="savedEmpty" class="empty-state" hidden></div>
+            <ul id="savedList" class="saved-list" aria-label="已保存内容列表"></ul>
+          </div>
+        </section>
+
+        <section id="editorView" class="editor-view" hidden aria-labelledby="editorHeading">
+          <header class="editor-header">
+            <button id="editorBackButton" class="icon-button" type="button" aria-label="返回实时请求列表">←</button>
+            <div class="editor-heading-wrap">
+              <h2 id="editorHeading"></h2>
+              <p id="editorStage"></p>
+            </div>
+            <span id="queueBadge" class="queue-badge"></span>
+          </header>
+
+          <div id="templateTools" class="template-tools" hidden>
+            <label for="templateSelect">请求体模板</label>
+            <div class="template-actions">
+              <select id="templateSelect">
+                <option value="">选择当前接口的模板</option>
+              </select>
+              <button id="applyTemplateButton" class="button button-secondary" type="button">套用</button>
+              <button id="saveTemplateButton" class="button button-quiet" type="button">保存当前</button>
+            </div>
+          </div>
+
+          <div class="editor-meta">
+            <span id="editorMethod" class="method-badge"></span>
+            <span id="editorUrl"></span>
+          </div>
+          <div id="autoRuleNote" class="auto-rule-note" hidden></div>
+
+          <div class="editor-label">
+            <label id="editorBodyLabel" for="jsonEditor">JSON Body</label>
+            <button id="formatJsonButton" class="text-button" type="button">格式化</button>
+          </div>
+          <textarea id="jsonEditor" spellcheck="false" aria-describedby="editorError"></textarea>
+          <p id="editorError" class="field-error" role="alert"></p>
+
+          <div id="editorActions" class="editor-actions">
+            <button id="passOriginalButton" class="button button-quiet" type="button">原样放行</button>
+            <button id="saveRuleButton" class="button button-secondary" type="button">保存为规则</button>
+            <button id="applyAndContinueButton" class="button button-primary" type="button">应用并继续</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="titleDialog" aria-labelledby="titleDialogHeading">
+      <form id="titleForm" class="dialog-form" method="dialog" novalidate>
+        <div>
+          <p id="titleDialogEyebrow" class="eyebrow"></p>
+          <h2 id="titleDialogHeading"></h2>
+        </div>
+        <label for="titleInput">自定义标题</label>
+        <input id="titleInput" type="text" maxlength="80" required aria-describedby="titleDialogHelp titleDialogError" />
+        <p id="titleDialogHelp" class="field-help"></p>
+        <p id="titleDialogError" class="field-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button id="cancelTitleButton" class="button button-quiet" type="button">取消</button>
+          <button class="button button-primary" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="confirmDialog" aria-labelledby="confirmDialogHeading">
+      <form id="confirmForm" class="dialog-form" method="dialog">
+        <h2 id="confirmDialogHeading">确认删除</h2>
+        <p id="confirmDialogMessage" class="dialog-message"></p>
+        <div class="dialog-actions">
+          <button id="cancelConfirmButton" class="button button-quiet" type="button">取消</button>
+          <button id="confirmSubmitButton" class="button button-danger" type="submit">删除</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="./sidepanel.js"></script>
+  </body>
+</html>

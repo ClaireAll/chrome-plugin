@@ -1,0 +1,9 @@
+{
+  "name": "api-rewriter-chrome-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/shared/constants.js && node --check src/shared/domain.js && node --check src/shared/data-store.js && node --check src/background/service-worker.js && node --check src/sidepanel/sidepanel.js"
+  }
+}

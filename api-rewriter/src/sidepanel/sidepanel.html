@@ -9,14 +9,13 @@
   <body>
     <div class="app-shell">
       <header class="app-header">
-        <div>
-          <p class="eyebrow">Network override</p>
-          <h1>API Rewriter</h1>
-        </div>
         <button id="reconnectButton" class="button button-quiet" type="button" hidden>重新连接</button>
       </header>
 
-      <div id="statusMessage" class="status-message" role="status" aria-live="polite"></div>
+      <div id="statusMessage" class="status-message" role="status" aria-live="polite">
+        <span id="statusMessageText" class="status-message-text"></span>
+        <button id="dismissStatusButton" class="status-dismiss" type="button" aria-label="关闭提示" hidden>×</button>
+      </div>
       <section id="storageBar" class="file-bar" aria-label="规则数据存储"></section>
 
       <section id="recordingControl" class="recording-control" aria-label="接口记录控制">
@@ -24,7 +23,7 @@
           <span id="recordingDot" class="recording-dot" aria-hidden="true"></span>
           <div>
             <strong id="recordingTitle">接口记录已停止</strong>
-            <p id="recordingDescription">开启后才会记录、拦截和应用自动规则。</p>
+            <p id="recordingDescription">开启后将记录接口，并应用已保存规则和快捷配置。</p>
           </div>
         </div>
         <label class="master-switch">
@@ -37,6 +36,7 @@
       <nav id="mainTabs" class="main-tabs" role="tablist" aria-label="主要视图">
         <button id="liveTab" class="main-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="liveView">实时请求</button>
         <button id="savedTab" class="main-tab" type="button" role="tab" aria-selected="false" aria-controls="savedView">已保存 <span id="savedCount" class="tab-count">0</span></button>
+        <button id="quickTab" class="main-tab" type="button" role="tab" aria-selected="false" aria-controls="quickView">快捷能力</button>
       </nav>
 
       <main>
@@ -81,6 +81,158 @@
             <div id="savedEmpty" class="empty-state" hidden></div>
             <ul id="savedList" class="saved-list" aria-label="已保存内容列表"></ul>
           </div>
+        </section>
+
+        <section id="quickView" class="view quick-view" role="tabpanel" aria-labelledby="quickTab" hidden>
+          <p id="quickWarning" class="quick-warning">⚠️ 仅改变前端展示效果，不会修改服务端数据；涉及真实接口校验的操作仍按原权限执行。</p>
+          <form id="quickForm" class="quick-form" aria-describedby="quickWarning">
+            <section class="quick-combination" aria-labelledby="quickCombinationLabel">
+              <strong id="quickCombinationLabel">当前组合</strong>
+              <div id="quickCombination" class="quick-combination-values"></div>
+              <button id="resetQuickButton" class="text-button quick-reset-button" type="button" aria-label="重置全部快捷配置">重置</button>
+            </section>
+
+            <section class="quick-card quick-stack">
+              <label class="quick-row"><span>用户身份</span>
+                <select name="role">
+                  <option value="">保持接口原值</option>
+                  <option value="0">管理员</option>
+                  <option value="1">编辑者</option>
+                  <option value="2">查看者</option>
+                  <option value="5">超级管理员</option>
+                </select>
+              </label>
+              <label class="quick-row"><span>企业类型</span>
+                <select name="corpPreset">
+                  <option value="">保持接口原值</option>
+                  <option value="normal">独立版</option>
+                  <option value="dingtalk">钉钉集成</option>
+                  <option value="wecom">企业微信集成</option>
+                  <option value="jiandaoyun">简道云集成</option>
+                  <option value="lark">飞书集成</option>
+                  <option value="larkSelf">飞书自建应用</option>
+                  <option value="youzan">有赞集成</option>
+                  <option value="fusion">融合版</option>
+                  <option value="fusionIam">融合版 IAM</option>
+                </select>
+              </label>
+              <label class="quick-row"><span>商业版本</span>
+                <select name="version">
+                  <option value="">保持接口原值</option>
+                  <option value="Hi01000">免费版</option>
+                  <option value="Hi01100">ODM 专版</option>
+                  <option value="Hi02000">高级版</option>
+                  <option value="Hi03000">企业版</option>
+                  <option value="Hi04000">专属版</option>
+                </select>
+              </label>
+              <label class="quick-row"><span>语言</span>
+                <select name="locale">
+                  <option value="">保持接口原值</option>
+                  <option value="zh_cn">简体中文</option>
+                  <option value="zh_tw">繁體中文</option>
+                  <option value="en_us">English</option>
+                  <option value="ja_jp">日本語</option>
+                  <option value="vi_vn">Tiếng Việt</option>
+                  <option value="ru_ru">Русский</option>
+                  <option value="fr_fr">Français</option>
+                  <option value="es_es">Español</option>
+                  <option value="th_th">ไทย</option>
+                  <option value="id_id">Bahasa Indonesia</option>
+                  <option value="ko_kr">한국어</option>
+                  <option value="de_de">Deutsch</option>
+                  <option value="pt_pt">Português</option>
+                  <option value="km_kh">ភាសាខ្មែរ</option>
+                </select>
+              </label>
+            </section>
+
+            <section class="quick-card quick-stack">
+              <h2>计算资源</h2>
+              <label class="quick-row"><span>最大行数（万行）</span><input name="maxRowSize" type="number" min="0" step="any" inputmode="decimal" placeholder="保持接口原值" /></label>
+              <label class="quick-row"><span>单任务内存（MB）</span><input name="maxMemPerTaskMB" type="number" min="0" step="any" inputmode="decimal" placeholder="保持接口原值" /></label>
+              <label class="quick-row"><span>高性能模式</span><select name="highPerformance"><option value="">保持接口原值</option><option value="false">关闭</option><option value="true">开启</option></select></label>
+            </section>
+
+            <section class="quick-advanced" aria-labelledby="quickAdvancedHeading">
+              <div class="quick-section-heading">
+                <h2 id="quickAdvancedHeading">更多能力</h2>
+                <small>8 项高级配置</small>
+              </div>
+                <section class="quick-group quick-stack">
+                  <h2>身份补充</h2>
+                  <label class="quick-row"><span>当前空间身份</span><select name="groupRole"><option value="">保持接口原值</option><option value="0">空间管理员</option><option value="1">空间成员</option></select></label>
+                  <label class="quick-row"><span>平台身份</span><select name="platformRole"><option value="">保持接口原值</option><option value="-1">普通用户</option><option value="0">平台系统管理员</option></select></label>
+                  <label class="quick-row"><span>发布权限</span><select name="publishAuth"><option value="">保持接口原值</option><option value="true">允许发布</option><option value="false">禁止发布</option></select></label>
+                  <label class="quick-row"><span>下架权限</span><select name="removeCaseAuth"><option value="">保持接口原值</option><option value="true">允许下架</option><option value="false">禁止下架</option></select></label>
+                  <label class="quick-row"><span>项目权限</span><select name="projectAuth"><option value="">保持接口原值</option><option value="manager">项目管理员</option><option value="edit">项目编辑者</option><option value="view">项目查看者</option></select></label>
+                  <p id="quickIdentityOutcome" class="quick-help" aria-live="polite"></p>
+                </section>
+
+                <section class="quick-group quick-stack">
+                  <h2>专项管理权限</h2>
+                  <label class="quick-row"><span>处理方式</span><select name="policiesEnabled"><option value="false">跟随身份默认</option><option value="true">按以下设置覆盖</option></select></label>
+                  <label class="quick-row"><span>成员管理</span><select name="policies" data-enabled-value="memberManager"><option value="">关闭</option><option value="memberManager">开启</option></select></label>
+                  <label class="quick-row"><span>安全管理</span><select name="policies" data-enabled-value="securityManager"><option value="">关闭</option><option value="securityManager">开启</option></select></label>
+                  <label class="quick-row"><span>数据门户</span><select name="policies" data-enabled-value="dataPortalManager"><option value="">关闭</option><option value="dataPortalManager">开启</option></select></label>
+                  <label class="quick-row"><span>数据目录</span><select name="policies" data-enabled-value="dataCatalogManager"><option value="">关闭</option><option value="dataCatalogManager">开启</option></select></label>
+                  <label class="quick-row"><span>数据准备</span><select name="policies" data-enabled-value="dataPrepareManager"><option value="">关闭</option><option value="dataPrepareManager">开启</option></select></label>
+                  <label class="quick-row"><span>数据源管理</span><select name="policies" data-enabled-value="datasourceManager"><option value="">关闭</option><option value="datasourceManager">开启</option></select></label>
+                </section>
+
+                <section class="quick-group quick-stack">
+                  <h2>灰度能力</h2>
+                  <p class="quick-help">点击即开启，再次点击关闭。</p>
+                  <div class="quick-option-group" role="group" aria-label="灰度能力">
+                    <button type="button" class="quick-option-button" data-beta-value="0" aria-pressed="false">仪表板 1→2</button>
+                    <button type="button" class="quick-option-button" data-beta-value="12" aria-pressed="false">在线 Excel</button>
+                    <button type="button" class="quick-option-button" data-beta-value="1" aria-pressed="false">复杂表</button>
+                    <button type="button" class="quick-option-button" data-beta-value="21" aria-pressed="false">CPP 排序</button>
+                    <button type="button" class="quick-option-button" data-beta-value="24" aria-pressed="false">排序助手</button>
+                    <button type="button" class="quick-option-button" data-beta-value="25" aria-pressed="false">数据诊断</button>
+                    <button type="button" class="quick-option-button" data-beta-value="27" aria-pressed="false">指标树</button>
+                    <button type="button" class="quick-option-button" data-beta-value="1000" aria-pressed="false">AI 美化</button>
+                    <button type="button" class="quick-option-button" data-beta-value="1001" aria-pressed="false">AI 报告</button>
+                    <button type="button" class="quick-option-button" data-beta-value="1002" aria-pressed="false">场景 Agent</button>
+                    <button type="button" class="quick-option-button" data-beta-value="17" aria-pressed="false">V2 Agent</button>
+                    <button type="button" class="quick-option-button" data-beta-value="14" aria-pressed="false">组件计算</button>
+                    <button type="button" class="quick-option-button" data-beta-value="22" aria-pressed="false">数据脱敏</button>
+                    <button type="button" class="quick-option-button" data-beta-value="4" aria-pressed="false">公开分享登录</button>
+                    <button type="button" class="quick-option-button" data-beta-value="7" aria-pressed="false">分析组件</button>
+                    <button type="button" class="quick-option-button" data-beta-value="2" aria-pressed="false">MPP</button>
+                  </div>
+                </section>
+
+                <section class="quick-group quick-stack">
+                  <h2>部署与区域</h2>
+                  <label class="quick-row"><span>部署类型</span><select name="deployType"><option value="">保持原值</option><option value="saas">SaaS</option><option value="private-cloud">私有云</option></select></label>
+                  <label class="quick-row"><span>产品区域</span><select name="productEdition"><option value="">保持原值</option><option value="domestic">国内版</option><option value="international">国际版</option></select></label>
+                </section>
+
+                <section class="quick-group quick-stack">
+                  <h2>版本状态</h2>
+                  <label class="quick-row"><span>有效期状态</span><select name="versionStatus"><option value="">保持原值</option><option value="normal">正常</option><option value="expiring">即将到期</option><option value="trial">试用结束</option><option value="delayed">延期 1 天</option><option value="expired">已到期</option></select></label>
+                </section>
+
+                <section class="quick-group quick-stack">
+                  <h2>门户能力</h2>
+                  <label class="quick-row"><span>门户</span><select name="portalEnabled"><option value="">保持原值</option><option value="true">开启</option><option value="false">关闭</option></select></label>
+                  <label class="quick-row"><span>移动端首页直达</span><select name="mobileHomeDirectEnabled"><option value="">保持原值</option><option value="true">开启</option><option value="false">关闭</option></select></label>
+                </section>
+
+                <section class="quick-group quick-stack">
+                  <h2>地区格式</h2>
+                  <label class="quick-row"><span>时区</span><select name="timezone"><option value="">保持原值</option><option value="Etc/GMT-8">中国标准时间</option><option value="UTC">协调世界时</option><option value="Asia/Tokyo">日本标准时间</option><option value="Europe/London">英国时间</option><option value="America/New_York">美国东部时间</option></select></label>
+                  <label class="quick-row"><span>时间制式</span><select name="timeFormat"><option value="">保持原值</option><option value="H12">12 小时制</option><option value="H24">24 小时制</option></select></label>
+                  <label class="quick-row"><span>每周起始日</span><select name="weekStart"><option value="">保持原值</option><option value="Mon">周一</option><option value="Sun">周日</option></select></label>
+                </section>
+
+            </section>
+
+            <div class="quick-actions">
+              <button id="applyQuickButton" class="button button-primary" type="submit">应用并刷新</button>
+            </div>
+          </form>
         </section>
 
         <section id="editorView" class="editor-view" hidden aria-labelledby="editorHeading">

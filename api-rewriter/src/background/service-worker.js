@@ -7,14 +7,19 @@ import {
   WORKER_MESSAGE_TYPES
 } from "../shared/constants.js";
 import {
+  applyQuickConfig,
   applyPatches,
   buildInterfaceKey,
   buildManualKey,
   buildRuleGroupKey,
+  detectQuickOriginalValues,
   getAppliedChange,
   getUtf8ByteLength,
   isInterfaceFiltered,
+  matchesQuickConfig,
+  matchesQuickDetection,
   normalizeData,
+  normalizeQuickLocale,
   parseJsonText,
   recordAppliedChange,
   serializeLiveRequest
@@ -60,8 +65,6 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   session.connected = false;
   session.recording = false;
   session.pending.clear();
-  session.manualKeys.clear();
-  session.activeRuleIds.clear();
   session.error = `调试连接已断开：${reason || "未知原因"}`;
   broadcastState(session);
 });
@@ -73,9 +76,40 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   const session = sessions.get(tabId);
   if (!session) return;
-  if (changeInfo.url) session.tabUrl = changeInfo.url;
+  if (changeInfo.url) {
+    try {
+      if (new URL(session.tabUrl).origin !== new URL(changeInfo.url).origin) {
+        session.quickUserId = "";
+        const locale = normalizeQuickLocale(chrome.i18n.getUILanguage());
+        session.quickOriginalValues = locale ? { locale } : {};
+      }
+    } catch {}
+    session.tabUrl = changeInfo.url;
+  }
   if (changeInfo.status === "loading" && session.recording) {
-    void resetRuntimeState(session, "页面已刷新，拦截开关已重置");
+    void resetRuntimeState(session, "页面已加载，继续记录接口");
+  }
+});
+
+chrome.sidePanel.onClosed?.addListener((info) => {
+  for (const session of sessions.values()) {
+    const belongsToClosedPanel = info.tabId
+      ? session.tabId === info.tabId
+      : session.windowId === info.windowId;
+    if (!belongsToClosedPanel) continue;
+    session.resumeRecordingOnOpen = session.connected && session.recording;
+    void stopRecording(session, "Side Panel 已关闭");
+  }
+});
+
+chrome.sidePanel.onOpened?.addListener((info) => {
+  for (const session of sessions.values()) {
+    const belongsToOpenedPanel = info.tabId
+      ? session.tabId === info.tabId
+      : session.windowId === info.windowId;
+    if (!belongsToOpenedPanel || !session.resumeRecordingOnOpen) continue;
+    session.resumeRecordingOnOpen = false;
+    void startRecording(session);
   }
 });
 
@@ -103,14 +137,14 @@ async function handlePanelMessage(port, message) {
       case PANEL_MESSAGE_TYPES.SYNC_DATA:
         await syncSessionData(port, message.data);
         break;
+      case PANEL_MESSAGE_TYPES.APPLY_QUICK_CONFIG:
+        await applyQuickConfigAndReload(port);
+        break;
       case PANEL_MESSAGE_TYPES.SET_RECORDING:
         await setRecording(port, Boolean(message.enabled));
         break;
       case PANEL_MESSAGE_TYPES.SET_MANUAL_INTERCEPT:
         setManualIntercept(port, message);
-        break;
-      case PANEL_MESSAGE_TYPES.SET_ACTIVE_RULE:
-        setActiveRule(port, message);
         break;
       case PANEL_MESSAGE_TYPES.RESOLVE_PENDING:
         await resolvePending(port, message);
@@ -162,22 +196,29 @@ async function attachPortToTab(port, tabId) {
 
 // 创建一个仅在当前标签页和 Side Panel 生命周期内存在的运行会话。
 function createSession(tab, port, data) {
+  const normalizedData = normalizeData(data);
+  const locale = normalizeQuickLocale(chrome.i18n.getUILanguage());
   return {
     tabId: tab.id,
+    windowId: tab.windowId,
     tabUrl: tab.url || "",
     port,
     connected: false,
     recording: false,
+    resumeRecordingOnOpen: false,
     closing: false,
     error: "",
     notice: "",
-    data: normalizeData(data),
+    data: normalizedData,
     manualKeys: new Set(),
-    activeRuleIds: new Map(),
+    activeRuleIds: createActiveRuleIds(normalizedData.rules, normalizedData.interfaceFilters),
     liveRequests: new Map(),
     pending: new Map(),
     nextSequence: 0,
-    generation: 0
+    generation: 0,
+    languageScriptId: "",
+    quickUserId: "",
+    quickOriginalValues: locale ? { locale } : {}
   };
 }
 
@@ -195,6 +236,7 @@ async function startRecording(session) {
   try {
     await chrome.debugger.attach({ tabId: session.tabId }, DEBUGGER_PROTOCOL_VERSION);
     await chrome.debugger.sendCommand({ tabId: session.tabId }, "Network.enable");
+    await chrome.debugger.sendCommand({ tabId: session.tabId }, "Page.enable");
     await chrome.debugger.sendCommand({ tabId: session.tabId }, "Fetch.enable", {
       patterns: [
         { urlPattern: "*", resourceType: "XHR", requestStage: "Request" },
@@ -205,6 +247,8 @@ async function startRecording(session) {
     });
     session.connected = true;
     session.recording = true;
+    session.activeRuleIds = createActiveRuleIds(session.data.rules, session.data.interfaceFilters);
+    await syncLanguageOverride(session);
     session.error = "";
     session.notice = "";
   } catch (error) {
@@ -222,6 +266,7 @@ async function startRecording(session) {
 async function stopRecording(session, notice) {
   session.generation += 1;
   const wasConnected = session.connected;
+  if (wasConnected) await removeLanguageOverride(session);
   session.connected = false;
   session.recording = false;
   const pendingItems = [...session.pending.values()];
@@ -239,10 +284,26 @@ async function stopRecording(session, notice) {
   broadcastState(session);
 }
 
+// 应用快捷配置并刷新当前标签页，让初始化接口和语言设置重新生效。
+async function applyQuickConfigAndReload(port) {
+  const session = getSessionForPort(port);
+  if (!session) throw new Error("当前标签页尚未就绪");
+  const wasRecording = session.connected && session.recording;
+  if (!wasRecording) await startRecording(session);
+  if (!session.connected || !session.recording) {
+    throw new Error(session.error || "无法启动接口记录");
+  }
+  if (wasRecording) await syncLanguageOverride(session);
+  session.notice = "快捷配置已应用，页面正在刷新";
+  broadcastState(session);
+  await chrome.tabs.reload(session.tabId);
+}
+
 // 将浏览器本地存储中的规则、模板和接口过滤项同步到当前拦截会话。
 async function syncSessionData(port, input) {
   const context = portContexts.get(port);
   if (!context) return;
+  const previousQuickConfig = JSON.stringify(context.data.quickConfig);
   const previousFilterKeys = new Set((context.data.interfaceFilters || []).map(
     (filter) => buildInterfaceKey(filter.method, filter.url)
   ));
@@ -250,16 +311,16 @@ async function syncSessionData(port, input) {
   const session = getSessionForPort(port);
   if (!session) return;
   session.data = context.data;
+  session.activeRuleIds = createActiveRuleIds(session.data.rules, session.data.interfaceFilters);
+  if (session.connected && session.recording && previousQuickConfig !== JSON.stringify(session.data.quickConfig)) {
+    await syncLanguageOverride(session);
+  }
   const nextFilterKeys = new Set(session.data.interfaceFilters.map(
     (filter) => buildInterfaceKey(filter.method, filter.url)
   ));
   if (!setsEqual(previousFilterKeys, nextFilterKeys)) {
     session.generation += 1;
     await applyInterfaceFilters(session);
-  }
-  const availableIds = new Set(session.data.rules.map((rule) => rule.id));
-  for (const [groupKey, ruleId] of session.activeRuleIds) {
-    if (!availableIds.has(ruleId)) session.activeRuleIds.delete(groupKey);
   }
   broadcastState(session);
 }
@@ -292,28 +353,6 @@ function setManualIntercept(port, message) {
   const key = buildManualKey(message.method, message.url, message.stage);
   if (message.enabled) session.manualKeys.add(key);
   else session.manualKeys.delete(key);
-  broadcastState(session);
-}
-
-// 在同接口同方向的命名规则中互斥启用一条规则。
-function setActiveRule(port, message) {
-  const session = getSessionForPort(port);
-  if (!session?.connected) return;
-  const groupKey = buildRuleGroupKey(message.method, message.url, message.stage);
-  if (isInterfaceFiltered(session.data.interfaceFilters, message.method, message.url)) {
-    session.activeRuleIds.delete(groupKey);
-    broadcastState(session);
-    return;
-  }
-  if (!message.ruleId) {
-    session.activeRuleIds.delete(groupKey);
-  } else {
-    const rule = session.data.rules.find((item) => item.id === message.ruleId);
-    if (!rule || buildRuleGroupKey(rule.method, rule.url, rule.stage) !== groupKey) {
-      throw new Error("替换规则与当前接口不匹配");
-    }
-    session.activeRuleIds.set(groupKey, rule.id);
-  }
   broadcastState(session);
 }
 
@@ -358,8 +397,10 @@ async function handlePausedRequest(session, params) {
   const live = upsertLiveRequest(session, params, stage, method, url);
   const activeRule = getActiveRule(session, method, url, stage);
   const manualEnabled = session.manualKeys.has(buildManualKey(method, url, stage));
+  const quickEnabled = matchesQuickConfig(session.data.quickConfig, method, url, stage);
+  const quickDetectionEnabled = matchesQuickDetection(method, url, stage);
 
-  if (!activeRule && !manualEnabled) {
+  if (!activeRule && !manualEnabled && !quickEnabled && !quickDetectionEnabled) {
     await continueOriginal(session.tabId, params.requestId);
     broadcastState(session);
     return;
@@ -391,10 +432,34 @@ async function handlePausedRequest(session, params) {
     return;
   }
 
-  let currentValue = parsed.value;
+  if (stage === INTERCEPT_STAGES.RESPONSE && method === "GET" && /\/decision\/v1\/user\/info(?:[?#]|$)/.test(url)) {
+    const userId = parsed.value?.data?.userId;
+    if (userId !== undefined && userId !== null) session.quickUserId = String(userId);
+  }
+  const detectedQuickValues = detectQuickOriginalValues(
+    parsed.value,
+    method,
+    url,
+    stage,
+    { userId: session.quickUserId }
+  );
+  if (Object.keys(detectedQuickValues).length) {
+    session.quickOriginalValues = { ...session.quickOriginalValues, ...detectedQuickValues };
+  }
+  const quickResult = applyQuickConfig(
+    parsed.value,
+    session.data.quickConfig,
+    method,
+    url,
+    stage,
+    { userId: session.quickUserId }
+  );
+  let currentValue = quickResult.value;
+  let sourceTitle = quickResult.applied ? "快捷能力" : "";
   if (activeRule) {
     try {
       currentValue = applyPatches(currentValue, activeRule.patches);
+      sourceTitle = activeRule.title;
       live.lastAction = `已应用规则：${activeRule.title}`;
       live.lastError = "";
     } catch (error) {
@@ -407,18 +472,35 @@ async function handlePausedRequest(session, params) {
           method,
           url,
           bodyResult.text,
-          JSON.stringify(parsed.value, null, 2),
-          null,
+          JSON.stringify(currentValue, null, 2),
+          quickResult.applied ? { title: "快捷能力" } : null,
           sequence
         );
         live.lastAction = "自动规则失败，等待手动处理";
         broadcastState(session);
         return;
       }
-      await continueOriginal(session.tabId, params.requestId);
+      if (quickResult.applied) {
+        const quickText = JSON.stringify(currentValue);
+        await continueWithText(session.tabId, params, stage, quickText);
+        recordAppliedChange(live, {
+          stage,
+          text: JSON.stringify(currentValue, null, 2),
+          source: "rule",
+          sourceTitle: "快捷能力"
+        });
+      } else {
+        await continueOriginal(session.tabId, params.requestId);
+      }
       broadcastState(session);
       return;
     }
+  }
+
+  if (!quickResult.applied && !activeRule && !manualEnabled) {
+    await continueOriginal(session.tabId, params.requestId);
+    broadcastState(session);
+    return;
   }
 
   const currentText = JSON.stringify(currentValue, null, 2);
@@ -446,8 +528,18 @@ async function handlePausedRequest(session, params) {
     return;
   }
   if (manualEnabled) {
-    addPending(session, params, stage, method, url, bodyResult.text, currentText, activeRule, sequence);
-    live.lastAction = `等待手动处理${activeRule ? "（已先应用自动规则）" : ""}`;
+    addPending(
+      session,
+      params,
+      stage,
+      method,
+      url,
+      bodyResult.text,
+      currentText,
+      sourceTitle ? { title: sourceTitle } : null,
+      sequence
+    );
+    live.lastAction = `等待手动处理${sourceTitle ? "（已先应用自动规则）" : ""}`;
     broadcastState(session);
     return;
   }
@@ -457,7 +549,7 @@ async function handlePausedRequest(session, params) {
     stage,
     text: currentText,
     source: "rule",
-    sourceTitle: activeRule?.title || ""
+    sourceTitle
   });
   live.lastAction = `已自动替换${stage === INTERCEPT_STAGES.REQUEST ? "请求" : "响应"} Body`;
   broadcastState(session);
@@ -649,14 +741,12 @@ async function reconnectSession(port) {
   await setRecording(port, true);
 }
 
-// 页面刷新时放行队列并重置所有临时开关。
+// 页面刷新或切换域名时放行队列并清空旧记录，同时保留当前开关。
 async function resetRuntimeState(session, notice) {
   session.generation += 1;
   const pendingItems = [...session.pending.values()];
   session.pending.clear();
   session.liveRequests.clear();
-  session.manualKeys.clear();
-  session.activeRuleIds.clear();
   session.notice = notice;
   session.error = "";
   broadcastState(session);
@@ -668,6 +758,17 @@ async function resetRuntimeState(session, notice) {
       `页面刷新时无法放行等待请求，已断开调试连接：${releaseErrors[0]?.message || "协议命令失败"}`
     );
   }
+}
+
+// 从持久规则中恢复每个未过滤接口和方向最近启用的规则。
+function createActiveRuleIds(rules, filters) {
+  const activeRuleIds = new Map();
+  for (const rule of Array.isArray(rules) ? rules : []) {
+    if (rule.enabled && !isInterfaceFiltered(filters, rule.method, rule.url)) {
+      activeRuleIds.set(buildRuleGroupKey(rule.method, rule.url, rule.stage), rule.id);
+    }
+  }
+  return activeRuleIds;
 }
 
 // Side Panel 断开时释放当前标签页的所有网络暂停项。
@@ -684,6 +785,7 @@ async function cleanupSession(tabId, notice, errorMessage = "") {
   session.closing = true;
   session.generation += 1;
   const wasConnected = session.connected;
+  if (wasConnected) await removeLanguageOverride(session);
   session.connected = false;
   const pendingItems = [...session.pending.values()];
   session.pending.clear();
@@ -699,6 +801,52 @@ async function cleanupSession(tabId, notice, errorMessage = "") {
   const detachedState = createDetachedState(tabId, notice);
   detachedState.error = errorMessage;
   safePostMessage(session.port, { type: WORKER_MESSAGE_TYPES.STATE, state: detachedState });
+}
+
+// 按快捷配置安装或移除下一次页面加载时的语言覆盖脚本。
+async function syncLanguageOverride(session) {
+  await removeLanguageOverride(session);
+  if (!session.data.quickConfig.locale) return;
+  const result = await chrome.debugger.sendCommand(
+    { tabId: session.tabId },
+    "Page.addScriptToEvaluateOnNewDocument",
+    { source: createLanguageOverrideSource(session.data.quickConfig.locale) }
+  );
+  session.languageScriptId = String(result.identifier || "");
+}
+
+// 移除当前会话已安装的语言覆盖脚本。
+async function removeLanguageOverride(session) {
+  if (!session.languageScriptId) return;
+  try {
+    await chrome.debugger.sendCommand(
+      { tabId: session.tabId },
+      "Page.removeScriptToEvaluateOnNewDocument",
+      { identifier: session.languageScriptId }
+    );
+  } catch {}
+  session.languageScriptId = "";
+}
+
+// 生成只影响当前页面运行时、不写入真实 localStorage 的语言覆盖脚本。
+function createLanguageOverrideSource(locale) {
+  const browserLocale = {
+    zh_cn: "zh-CN", zh_tw: "zh-TW", en_us: "en-US", ja_jp: "ja-JP", vi_vn: "vi-VN",
+    ru_ru: "ru-RU", fr_fr: "fr-FR", es_es: "es-ES", th_th: "th-TH", id_id: "id-ID",
+    ko_kr: "ko-KR", de_de: "de-DE", pt_pt: "pt-PT", km_kh: "km-KH"
+  }[locale] || "zh-CN";
+  return `(() => {
+    const locale = ${JSON.stringify(locale)};
+    const browserLocale = ${JSON.stringify(browserLocale)};
+    const originalGetItem = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (key) {
+      return this === window.localStorage && (key === "fx.lang" || key === "fx.dev.lang")
+        ? locale
+        : originalGetItem.call(this, key);
+    };
+    Object.defineProperty(Navigator.prototype, "language", { configurable: true, get: () => browserLocale });
+    Object.defineProperty(Navigator.prototype, "languages", { configurable: true, get: () => [browserLocale] });
+  })();`;
 }
 
 // 原样放行已从共享队列中同步取出的暂停请求快照。
@@ -739,7 +887,8 @@ function serializeSession(session) {
     currentPending: currentPending ? serializePending(currentPending) : null,
     requests: [...session.liveRequests.values()].map(serializeLiveRequest).reverse(),
     manualKeys: [...session.manualKeys],
-    activeRuleIds: Object.fromEntries(session.activeRuleIds)
+    activeRuleIds: Object.fromEntries(session.activeRuleIds),
+    quickOriginalValues: session.quickOriginalValues
   };
 }
 
@@ -776,7 +925,8 @@ function createDetachedState(tabId, notice) {
     currentPending: null,
     requests: [],
     manualKeys: [],
-    activeRuleIds: {}
+    activeRuleIds: {},
+    quickOriginalValues: {}
   };
 }
 

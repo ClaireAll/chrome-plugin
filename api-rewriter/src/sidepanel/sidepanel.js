@@ -6,17 +6,21 @@ import {
   WORKER_MESSAGE_TYPES
 } from "../shared/constants.js";
 import {
+  buildInterfaceKey,
   buildManualKey,
   buildRuleGroupKey,
+  createDefaultQuickConfig,
   createEmptyData,
   createInterfaceFilter,
   createRequestTemplate,
   createRule,
   diffJson,
   formatJson,
+  getQuickConfigChanges,
   getLatestRequestIds,
   getUtf8ByteLength,
   isInterfaceFiltered,
+  normalizeQuickConfig,
   parseJsonText
 } from "../shared/domain.js";
 import {
@@ -30,6 +34,8 @@ import {
 const elements = {
   reconnectButton: document.getElementById("reconnectButton"),
   statusMessage: document.getElementById("statusMessage"),
+  statusMessageText: document.getElementById("statusMessageText"),
+  dismissStatusButton: document.getElementById("dismissStatusButton"),
   storageBar: document.getElementById("storageBar"),
   recordingControl: document.getElementById("recordingControl"),
   recordingDot: document.getElementById("recordingDot"),
@@ -39,9 +45,16 @@ const elements = {
   mainTabs: document.getElementById("mainTabs"),
   liveTab: document.getElementById("liveTab"),
   savedTab: document.getElementById("savedTab"),
+  quickTab: document.getElementById("quickTab"),
   savedCount: document.getElementById("savedCount"),
   liveView: document.getElementById("liveView"),
   savedView: document.getElementById("savedView"),
+  quickView: document.getElementById("quickView"),
+  quickForm: document.getElementById("quickForm"),
+  quickCombination: document.getElementById("quickCombination"),
+  quickIdentityOutcome: document.getElementById("quickIdentityOutcome"),
+  resetQuickButton: document.getElementById("resetQuickButton"),
+  applyQuickButton: document.getElementById("applyQuickButton"),
   editorView: document.getElementById("editorView"),
   pendingBanner: document.getElementById("pendingBanner"),
   pendingBannerTitle: document.getElementById("pendingBannerTitle"),
@@ -117,9 +130,12 @@ const state = {
   inspectedChange: null,
   flashMessage: "",
   flashType: "",
+  statusDismissed: false,
   titleAction: null,
   confirmAction: null,
-  lastDialogTrigger: null
+  lastDialogTrigger: null,
+  quickDraftDirty: false,
+  quickApplying: false
 };
 
 bindEvents();
@@ -136,10 +152,17 @@ async function initialize() {
 // 绑定侧栏中所有固定控件的交互事件。
 function bindEvents() {
   elements.reconnectButton.addEventListener("click", () => updateRecording(true));
+  elements.dismissStatusButton.addEventListener("click", dismissStatus);
   elements.recordingToggle.addEventListener("change", () => updateRecording(elements.recordingToggle.checked));
   elements.startRecordingButton.addEventListener("click", () => updateRecording(true));
   elements.liveTab.addEventListener("click", () => setView("live"));
   elements.savedTab.addEventListener("click", () => setView("saved"));
+  elements.quickTab.addEventListener("click", () => setView("quick"));
+  elements.quickForm.addEventListener("submit", handleQuickSubmit);
+  elements.quickForm.addEventListener("input", markQuickDraftDirty);
+  elements.quickForm.addEventListener("change", markQuickDraftDirty);
+  elements.quickForm.addEventListener("click", handleQuickOptionClick);
+  elements.resetQuickButton.addEventListener("click", resetQuickForm);
   elements.rulesSubtab.addEventListener("click", () => setSavedKind("rules"));
   elements.templatesSubtab.addEventListener("click", () => setSavedKind("templates"));
   elements.filtersSubtab.addEventListener("click", () => setSavedKind("filters"));
@@ -176,7 +199,7 @@ function bindEvents() {
 
 // 使用方向键、Home 和 End 在主 Tab 之间移动并激活选项。
 function handleMainTabKeydown(event) {
-  const tabs = [elements.liveTab, elements.savedTab];
+  const tabs = [elements.liveTab, elements.savedTab, elements.quickTab];
   const currentIndex = tabs.indexOf(document.activeElement);
   if (currentIndex < 0 || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
   event.preventDefault();
@@ -224,7 +247,11 @@ async function attachCurrentTab() {
 // 接收后台状态，并在出现新的等待项时打开 JSON 编辑器。
 function handleWorkerState(nextSession) {
   const previousPendingId = state.session.currentPending?.id || "";
-  state.session = { ...createDisconnectedSession(), ...(nextSession || {}) };
+  const previousStatus = `${state.session.error}\u0000${state.session.notice}`;
+  const normalizedSession = { ...createDisconnectedSession(), ...(nextSession || {}) };
+  const nextStatus = `${normalizedSession.error}\u0000${normalizedSession.notice}`;
+  if (nextStatus !== previousStatus) state.statusDismissed = false;
+  state.session = normalizedSession;
   state.recordingChanging = false;
   const currentPending = state.session.currentPending;
   if (!currentPending || currentPending.id !== state.resolvingPendingId || state.session.error) {
@@ -275,6 +302,7 @@ async function refreshStoredData() {
     state.storageReady = false;
     state.storageError = result.message;
   }
+  state.quickDraftDirty = false;
   syncDataToWorker();
   render();
 }
@@ -325,10 +353,98 @@ async function applyImportedData(importResult) {
   state.data = result.data;
   state.storageReady = true;
   state.storageError = "";
+  state.quickDraftDirty = false;
   syncDataToWorker();
   render();
   showFlash(`已从 ${importResult.fileName} 导入`, "success");
   return true;
+}
+
+// 标记快捷配置表单存在尚未应用的改动。
+function markQuickDraftDirty() {
+  state.quickDraftDirty = true;
+  renderQuickIdentityOutcome();
+}
+
+// 切换灰度能力按钮的开启状态。
+function handleQuickOptionClick(event) {
+  const button = event.target.closest("[data-beta-value]");
+  if (!button || !elements.quickForm.contains(button)) return;
+  button.setAttribute("aria-pressed", String(button.getAttribute("aria-pressed") !== "true"));
+  markQuickDraftDirty();
+}
+
+// 将快捷配置保存到浏览器并通知后台刷新页面生效。
+async function handleQuickSubmit(event) {
+  event.preventDefault();
+  if (state.quickApplying || !state.storageReady || !state.session.tabId) return;
+  const quickConfig = readQuickForm();
+  state.quickApplying = true;
+  renderQuickConfig();
+  const saved = await persistData(
+    (data) => ({ ...data, quickConfig }),
+    "快捷配置已保存"
+  );
+  if (saved) {
+    state.quickDraftDirty = false;
+    postWorkerMessage({ type: PANEL_MESSAGE_TYPES.APPLY_QUICK_CONFIG });
+  }
+  state.quickApplying = false;
+  renderQuickConfig();
+}
+
+// 从原生表单读取并规范化一份快捷配置。
+function readQuickForm() {
+  const values = new FormData(elements.quickForm);
+  const betaFunctions = [...elements.quickForm.querySelectorAll('[data-beta-value][aria-pressed="true"]')]
+    .map((button) => Number(button.dataset.betaValue));
+  const originalBetaFunctions = getQuickOriginalBetaFunctions();
+  const betaEnabled = betaFunctions.length !== originalBetaFunctions.length
+    || betaFunctions.some((value) => !originalBetaFunctions.includes(value));
+  return normalizeQuickConfig({
+    role: values.get("role"),
+    corpPreset: values.get("corpPreset"),
+    version: values.get("version"),
+    locale: values.get("locale"),
+    maxRowSize: values.get("maxRowSize"),
+    maxMemPerTaskMB: values.get("maxMemPerTaskMB"),
+    highPerformance: readOptionalBoolean(values.get("highPerformance")),
+    groupRole: values.get("groupRole"),
+    platformRole: values.get("platformRole"),
+    publishAuth: readOptionalBoolean(values.get("publishAuth")),
+    removeCaseAuth: readOptionalBoolean(values.get("removeCaseAuth")),
+    projectAuth: values.get("projectAuth"),
+    policiesEnabled: values.get("policiesEnabled") === "true",
+    policies: values.getAll("policies"),
+    betaEnabled,
+    betaFunctions: betaEnabled ? betaFunctions : [],
+    deployType: values.get("deployType"),
+    productEdition: values.get("productEdition"),
+    versionStatus: values.get("versionStatus"),
+    portalEnabled: readOptionalBoolean(values.get("portalEnabled")),
+    mobileHomeDirectEnabled: readOptionalBoolean(values.get("mobileHomeDirectEnabled")),
+    timezone: values.get("timezone"),
+    timeFormat: values.get("timeFormat"),
+    weekStart: values.get("weekStart")
+  }, state.session.quickOriginalValues);
+}
+
+// 返回当前页面从系统信息接口识别出的灰度能力列表。
+function getQuickOriginalBetaFunctions() {
+  return Array.isArray(state.session.quickOriginalValues?.betaFunctions)
+    ? state.session.quickOriginalValues.betaFunctions.map(Number)
+    : [];
+}
+
+// 将三态下拉框文本转换为布尔值或保持原值。
+function readOptionalBoolean(value) {
+  return value === "true" ? true : value === "false" ? false : null;
+}
+
+// 用默认值重置快捷配置草稿，等待用户主动应用。
+function resetQuickForm() {
+  fillQuickForm(createDefaultQuickConfig());
+  markQuickDraftDirty();
 }
 
 // 将浏览器中保存的规则与请求体模板导出为 JSON 文件。
@@ -366,7 +482,7 @@ async function persistData(mutator, successMessage) {
   return true;
 }
 
-// 将实时请求的 Method 和完整 URL 加入持久接口过滤列表。
+// 将实时请求的 Method 和 URL 路径加入持久接口过滤列表。
 async function filterRequest(request) {
   if (isInterfaceFiltered(state.data.interfaceFilters, request.method, request.url)) return;
   const filter = createInterfaceFilter({ method: request.method, url: request.url });
@@ -398,15 +514,22 @@ function updateManualIntercept(request, stage, enabled) {
   });
 }
 
-// 将命名规则的互斥启用状态发送给后台当前标签页会话。
-function updateActiveRule(rule, enabled) {
-  postWorkerMessage({
-    type: PANEL_MESSAGE_TYPES.SET_ACTIVE_RULE,
-    method: rule.method,
-    url: rule.url,
-    stage: rule.stage,
-    ruleId: enabled ? rule.id : null
-  });
+// 持久保存命名规则的互斥启用状态并同步到当前会话。
+async function updateActiveRule(rule, enabled) {
+  const groupKey = buildRuleGroupKey(rule.method, rule.url, rule.stage);
+  await persistData(
+    (data) => ({
+      ...data,
+      rules: data.rules.map((item) => {
+        if (buildRuleGroupKey(item.method, item.url, item.stage) !== groupKey) return item;
+        const nextEnabled = item.id === rule.id ? enabled : false;
+        return item.enabled === nextEnabled
+          ? item
+          : { ...item, enabled: nextEnabled, updatedAt: new Date().toISOString() };
+      })
+    }),
+    enabled ? "替换规则已启用" : "替换规则已停用"
+  );
 }
 
 // 根据用户选择原样放行或应用编辑后的 JSON。
@@ -477,7 +600,7 @@ function openSaveRuleDialog(trigger) {
     eyebrow: "保存替换规则",
     heading: pending.stage === INTERCEPT_STAGES.REQUEST ? "命名请求替换规则" : "命名响应替换规则",
     value: defaultSavedTitle(pending, pending.stage === INTERCEPT_STAGES.REQUEST ? "请求" : "响应"),
-    help: `将保存 ${patches.length} 个字段操作，精确匹配 ${pending.method} ${pending.url}`,
+    help: `将保存 ${patches.length} 个字段操作，按 ${pending.method} + 请求路径跨域匹配`,
     action: async (title) => {
       const rule = createRule({
         title,
@@ -505,7 +628,7 @@ function openSaveTemplateDialog(trigger) {
     eyebrow: "快捷保存请求体",
     heading: "命名请求体模板",
     value: defaultSavedTitle(pending, "请求体模板"),
-    help: `保存完整 Body，仅用于 ${pending.method} ${pending.url}`,
+    help: `保存完整 Body，用于 ${pending.method} + 请求路径跨域共用`,
     action: async (title) => {
       const template = createRequestTemplate({
         title,
@@ -525,7 +648,7 @@ function openSaveTemplateDialog(trigger) {
 function applySelectedTemplate() {
   const pending = state.session.currentPending;
   const template = state.data.requestTemplates.find((item) => item.id === elements.templateSelect.value);
-  if (!pending || !template || template.method !== pending.method || template.url !== pending.url) return;
+  if (!pending || !template || buildInterfaceKey(template.method, template.url) !== buildInterfaceKey(pending.method, pending.url)) return;
   if (getUtf8ByteLength(JSON.stringify(template.body)) > MAX_BODY_BYTES) {
     showFlash("该请求体模板超过 5 MB，不能套用", "error");
     return;
@@ -681,20 +804,21 @@ function render() {
   renderPendingBanner();
   renderLiveRequests();
   renderSavedList();
+  renderQuickConfig();
   if (state.view === "editor") renderEditor();
   else if (state.view === "applied") renderAppliedChange();
   renderVisibility();
 }
 
-// 渲染连接、文件和操作反馈的最高优先级状态。
+// 仅渲染需要用户处理的错误状态。
 function renderStatus() {
   const error = state.session.error || state.storageError || (state.flashType === "error" ? state.flashMessage : "");
-  const success = !error && state.flashType === "success" ? state.flashMessage : "";
-  const message = error || success || state.session.notice || "";
-  elements.statusMessage.textContent = message;
+  const message = state.statusDismissed ? "" : error;
+  elements.statusMessageText.textContent = message;
   elements.statusMessage.className = "status-message";
-  if (error) elements.statusMessage.classList.add("is-error");
-  else if (success || state.session.recording) elements.statusMessage.classList.add("is-success");
+  elements.statusMessage.classList.toggle("has-message", Boolean(message));
+  if (message) elements.statusMessage.classList.add("is-error");
+  elements.dismissStatusButton.hidden = !message;
   elements.reconnectButton.hidden = !state.session.error || !state.session.tabId;
 }
 
@@ -722,8 +846,8 @@ function renderRecordingControl() {
   elements.recordingControl.classList.toggle("is-recording", recording);
   elements.recordingTitle.textContent = recording ? "正在记录接口" : "接口记录已停止";
   elements.recordingDescription.textContent = recording
-    ? "正在记录、拦截并应用当前启用的自动规则。"
-    : "开启后才会记录、拦截和应用自动规则。";
+    ? "正在记录、拦截并应用已保存规则和快捷配置。"
+    : "开启后将记录接口，并应用已保存规则和快捷配置。";
   elements.recordingToggle.checked = recording;
   elements.recordingToggle.disabled = state.recordingChanging || !state.session.tabId;
   elements.recordingToggle.setAttribute("aria-label", recording ? "停止接口记录" : "开启接口记录");
@@ -733,8 +857,10 @@ function renderRecordingControl() {
 function renderTabs() {
   const liveActive = state.view === "live";
   const savedActive = state.view === "saved";
+  const quickActive = state.view === "quick";
   setTabState(elements.liveTab, liveActive);
   setTabState(elements.savedTab, savedActive);
+  setTabState(elements.quickTab, quickActive);
   setTabState(elements.rulesSubtab, state.savedKind === "rules");
   setTabState(elements.templatesSubtab, state.savedKind === "templates");
   setTabState(elements.filtersSubtab, state.savedKind === "filters");
@@ -744,6 +870,108 @@ function renderTabs() {
   elements.ruleCount.textContent = String(state.data.rules.length);
   elements.templateCount.textContent = String(state.data.requestTemplates.length);
   elements.filterCount.textContent = String(state.data.interfaceFilters.length);
+}
+
+// 渲染快捷配置表单，并保护尚未应用的本地草稿。
+function renderQuickConfig() {
+  if (!state.quickDraftDirty) fillQuickForm(state.data.quickConfig);
+  renderQuickCombination();
+  renderQuickIdentityOutcome();
+  elements.applyQuickButton.disabled = state.quickApplying || !state.storageReady || !state.session.tabId;
+  elements.resetQuickButton.disabled = state.quickApplying;
+}
+
+// 展示用户主动修改的快捷配置摘要。
+function renderQuickCombination() {
+  const config = readQuickForm();
+  const changedNames = new Set(getQuickConfigChanges(config));
+  const chips = [...elements.quickForm.querySelectorAll("select[name], input[name]")]
+    .filter((control) => changedNames.has(control.name) && control.value)
+    .map((control) => {
+      const label = control.closest(".quick-row")?.querySelector(":scope > span")?.firstChild?.textContent?.trim()
+        || control.name;
+      const value = control.tagName === "SELECT" ? control.selectedOptions[0]?.textContent : control.value;
+      return createElement("span", "quick-combination-chip", `${label}：${value}`);
+    });
+  if (config.betaEnabled) {
+    const originalBetaFunctions = getQuickOriginalBetaFunctions();
+    for (const button of elements.quickForm.querySelectorAll("[data-beta-value]")) {
+      const value = Number(button.dataset.betaValue);
+      const pressed = button.getAttribute("aria-pressed") === "true";
+      if (pressed === originalBetaFunctions.includes(value)) continue;
+      const action = pressed ? "" : "关闭 ";
+      chips.push(createElement("span", "quick-combination-chip", `灰度能力：${action}${button.textContent.trim()}`));
+    }
+  }
+  elements.quickCombination.closest(".quick-combination").hidden = chips.length === 0;
+  elements.quickCombination.replaceChildren(...chips);
+}
+
+// 将接口返回的核心原值显示为表单默认项，并展示最终权限结果。
+function renderQuickIdentityOutcome() {
+  const config = readQuickForm();
+  const originalValues = state.session.quickOriginalValues || {};
+  const platformOnlyNames = new Set(["timezone", "timeFormat", "weekStart"]);
+  const platformConfigUnavailable = originalValues.corpPreset
+    && !["fusion", "fusionIam"].includes(originalValues.corpPreset);
+  for (const name of [
+    "role", "corpPreset", "version", "locale", "highPerformance", "groupRole", "platformRole",
+    "publishAuth", "removeCaseAuth", "projectAuth", "deployType", "productEdition", "versionStatus",
+    "portalEnabled", "mobileHomeDirectEnabled", "timezone", "timeFormat", "weekStart"
+  ]) {
+    const select = elements.quickForm.elements.namedItem(name);
+    const originalOption = select.querySelector('option[value=""]');
+    const valueOption = [...select.options].find((option) => option.value === String(originalValues[name]));
+    const missingText = platformConfigUnavailable && platformOnlyNames.has(name)
+      ? "当前企业无接口值"
+      : "刷新页面后识别";
+    originalOption.textContent = valueOption?.textContent
+      || (originalValues[name] === undefined ? missingText : String(originalValues[name]));
+  }
+  for (const name of ["maxRowSize", "maxMemPerTaskMB"]) {
+    const input = elements.quickForm.elements.namedItem(name);
+    input.placeholder = originalValues[name] === undefined ? "刷新页面后识别" : String(originalValues[name]);
+  }
+  const viewer = config.role === 2;
+  const original = "接口原值（运行时决定）";
+  const groupRole = config.groupRole ?? (viewer ? 1 : originalValues.groupRole);
+  const platformRole = config.platformRole ?? (viewer ? -1 : originalValues.platformRole);
+  const publishAuth = config.publishAuth ?? (viewer ? false : originalValues.publishAuth);
+  const removeCaseAuth = config.removeCaseAuth ?? (viewer ? false : originalValues.removeCaseAuth);
+  const space = groupRole === 0 ? "空间管理员" : groupRole === 1 ? "空间成员" : original;
+  const platform = platformRole === 0 ? "平台系统管理员" : platformRole === -1 ? "普通用户" : original;
+  const publish = publishAuth === undefined ? original : publishAuth ? "允许发布" : "禁止发布";
+  const removeCase = removeCaseAuth === undefined ? original : removeCaseAuth ? "允许下架" : "禁止下架";
+  const project = viewer
+    ? "无项目编辑权限（查看者身份优先）"
+    : ({ manager: "项目管理员", edit: "项目编辑者", view: "项目查看者" }[
+      config.projectAuth ?? originalValues.projectAuth
+    ] || original);
+  elements.quickIdentityOutcome.textContent = `当前结果：${space} · ${platform} · ${publish} · ${removeCase} · ${project}`;
+}
+
+// 将规范化快捷配置写入各原生表单控件。
+function fillQuickForm(input) {
+  const config = normalizeQuickConfig(input);
+  const form = elements.quickForm;
+  for (const name of [
+    "role", "corpPreset", "version", "locale", "maxRowSize", "maxMemPerTaskMB", "groupRole", "platformRole", "projectAuth",
+    "deployType", "productEdition", "versionStatus", "timezone", "timeFormat", "weekStart", "highPerformance", "policiesEnabled"
+  ]) {
+    form.elements.namedItem(name).value = config[name] ?? "";
+  }
+  for (const name of [
+    "publishAuth", "removeCaseAuth", "portalEnabled", "mobileHomeDirectEnabled"
+  ]) {
+    form.elements.namedItem(name).value = config[name] === null ? "" : String(config[name]);
+  }
+  for (const select of form.querySelectorAll('[name="policies"]')) {
+    select.value = config.policies.includes(select.dataset.enabledValue) ? select.dataset.enabledValue : "";
+  }
+  const betaFunctions = config.betaEnabled ? config.betaFunctions : getQuickOriginalBetaFunctions();
+  for (const button of form.querySelectorAll("[data-beta-value]")) {
+    button.setAttribute("aria-pressed", String(betaFunctions.includes(Number(button.dataset.betaValue))));
+  }
 }
 
 // 渲染当前等待队列的快捷入口。
@@ -1000,10 +1228,10 @@ function renderAppliedChange() {
   elements.editorError.textContent = "";
 }
 
-// 渲染仅与当前 Method 和完整 URL 匹配的请求体模板。
+// 渲染与当前 Method 和 URL 路径跨域匹配的请求体模板。
 function renderMatchingTemplates(pending) {
   const templates = state.data.requestTemplates.filter((template) => (
-    template.method === pending.method && template.url === pending.url
+    buildInterfaceKey(template.method, template.url) === buildInterfaceKey(pending.method, pending.url)
   ));
   const previousValue = elements.templateSelect.value;
   elements.templateSelect.replaceChildren(createOption("", templates.length ? "选择当前接口的模板" : "当前接口暂无模板"));
@@ -1022,6 +1250,7 @@ function renderVisibility() {
   elements.mainTabs.hidden = detailVisible;
   elements.liveView.hidden = state.view !== "live";
   elements.savedView.hidden = state.view !== "saved";
+  elements.quickView.hidden = state.view !== "quick";
   elements.editorView.hidden = !detailVisible;
 }
 
@@ -1049,7 +1278,8 @@ function createDisconnectedSession() {
     currentPending: null,
     requests: [],
     manualKeys: [],
-    activeRuleIds: {}
+    activeRuleIds: {},
+    quickOriginalValues: {}
   };
 }
 
@@ -1070,6 +1300,13 @@ function postWorkerMessage(message) {
 function showFlash(message, type) {
   state.flashMessage = String(message || "");
   state.flashType = type;
+  state.statusDismissed = false;
+  renderStatus();
+}
+
+// 关闭当前状态提示，并在下一条新提示出现时恢复显示。
+function dismissStatus() {
+  state.statusDismissed = true;
   renderStatus();
 }
 

@@ -80,9 +80,7 @@ textarea:focus-visible {
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  min-height: 48px;
-  margin-bottom: 9px;
+  justify-content: flex-end;
 }
 
 .eyebrow {
@@ -112,6 +110,9 @@ h2 {
 }
 
 .status-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-height: 0;
   margin-bottom: 8px;
   border-radius: 8px;
@@ -120,11 +121,33 @@ h2 {
   line-height: 1.45;
 }
 
-.status-message:not(:empty) {
+.status-message.has-message {
   min-height: 34px;
   border: 1px solid var(--border);
   padding: 8px 10px;
   background: var(--surface);
+}
+
+.status-message-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.status-dismiss {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: currentColor;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.status-dismiss:hover {
+  background: rgba(27, 36, 51, 0.08);
 }
 
 .status-message.is-error {
@@ -299,7 +322,7 @@ h2 {
 
 .main-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   margin-bottom: 10px;
   border-radius: 10px;
@@ -337,6 +360,187 @@ h2 {
 .view,
 .editor-view {
   min-height: 420px;
+}
+
+.quick-view {
+  padding-bottom: 62px;
+}
+
+.quick-warning {
+  margin: 0 0 9px;
+  border: 1px solid #efc18f;
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.quick-form {
+  display: grid;
+  gap: 9px;
+}
+
+.quick-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px;
+  background: var(--surface);
+}
+
+.quick-card h2 {
+  margin: 0 0 9px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.quick-combination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: var(--surface);
+}
+
+.quick-combination > strong {
+  flex: 0 0 auto;
+  font-size: 10px;
+}
+
+.quick-combination-values {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.quick-combination-chip {
+  border-radius: 999px;
+  padding: 3px 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.quick-reset-button {
+  flex: 0 0 auto;
+}
+
+.quick-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.quick-help {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.quick-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.8fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.quick-row > span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.quick-row select,
+.quick-row input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 10px;
+}
+
+.quick-option-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quick-option-button {
+  min-height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 5px 9px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.quick-option-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.quick-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 2px 7px;
+}
+
+.quick-section-heading h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.quick-section-heading small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.quick-group {
+  border-top: 1px solid var(--border);
+  padding: 11px 2px;
+}
+
+.quick-group h2 {
+  margin: 0 0 1px;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.quick-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  z-index: 2;
+  border-top: 1px solid var(--border);
+  padding: 9px 0 0;
+  background: var(--canvas);
 }
 
 .toolbar,
@@ -852,6 +1056,42 @@ dialog::backdrop {
   clip-path: inset(50%);
 }
 
+body .app-shell,
+body .app-shell * {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+}
+
+body .app-shell :is(h1, h2, h3, strong, .request-url, .saved-title) {
+  font-weight: 700 !important;
+}
+
+.main-tab,
+.quick-row select,
+.quick-row input {
+  min-height: 40px;
+}
+
+.quick-option-button,
+.button {
+  min-height: 38px;
+}
+
+.method-badge,
+.stage-badge,
+.queue-badge,
+.tab-count {
+  min-width: 24px;
+  min-height: 24px;
+  height: auto;
+  line-height: 1.3;
+}
+
+.quick-combination-chip {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 380px) {
   .app-shell {
     padding: 10px;
@@ -860,6 +1100,11 @@ dialog::backdrop {
   .template-actions,
   .editor-actions {
     grid-template-columns: 1fr;
+  }
+
+  .quick-row {
+    grid-template-columns: minmax(112px, 0.9fr) minmax(0, 1.1fr);
+    gap: 7px;
   }
 
   #jsonEditor {

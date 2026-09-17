@@ -1,0 +1,125 @@
+{
+  "name": "change-groups",
+  "displayName": "Change Groups",
+  "description": "Group uncommitted Git diff hunks by bug for focused review.",
+  "version": "0.1.2",
+  "publisher": "claire",
+  "private": true,
+  "license": "UNLICENSED",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers"
+  ],
+  "activationEvents": [
+    "onView:changeGroups.view",
+    "onCommand:changeGroups.createGroup",
+    "onCommand:changeGroups.refresh"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "changeGroups.createGroup",
+        "title": "新建分组",
+        "category": "Change Groups",
+        "icon": "$(add)"
+      },
+      {
+        "command": "changeGroups.refresh",
+        "title": "刷新",
+        "category": "Change Groups",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "changeGroups.renameGroup",
+        "title": "重命名分组",
+        "category": "Change Groups"
+      },
+      {
+        "command": "changeGroups.deleteGroup",
+        "title": "删除分组",
+        "category": "Change Groups"
+      },
+      {
+        "command": "changeGroups.assignHunk",
+        "title": "移动到分组…",
+        "category": "Change Groups"
+      },
+      {
+        "command": "changeGroups.unassignHunk",
+        "title": "移回未分组",
+        "category": "Change Groups"
+      },
+      {
+        "command": "changeGroups.openFile",
+        "title": "打开文件",
+        "category": "Change Groups",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "changeGroups.openDiff",
+        "title": "打开分组 Diff",
+        "category": "Change Groups"
+      }
+    ],
+    "views": {
+      "scm": [
+        {
+          "id": "changeGroups.view",
+          "name": "Change Groups",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "changeGroups.createGroup",
+          "when": "view == changeGroups.view",
+          "group": "navigation@1"
+        },
+        {
+          "command": "changeGroups.refresh",
+          "when": "view == changeGroups.view",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "changeGroups.openFile",
+          "when": "view == changeGroups.view && (viewItem == changeGroups.file.grouped || viewItem == changeGroups.file.ungrouped)",
+          "group": "inline@1"
+        },
+        {
+          "command": "changeGroups.renameGroup",
+          "when": "view == changeGroups.view && viewItem == changeGroups.group",
+          "group": "inline@1"
+        },
+        {
+          "command": "changeGroups.deleteGroup",
+          "when": "view == changeGroups.view && viewItem == changeGroups.group",
+          "group": "inline@2"
+        },
+        {
+          "command": "changeGroups.assignHunk",
+          "when": "view == changeGroups.view && (viewItem == changeGroups.file.grouped || viewItem == changeGroups.file.ungrouped)",
+          "group": "navigation@1"
+        },
+        {
+          "command": "changeGroups.unassignHunk",
+          "when": "view == changeGroups.view && viewItem == changeGroups.file.grouped",
+          "group": "navigation@2"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "check": "node --check extension.js && node --check git-diff.js && node --check tools/check-package.js && node tools/check-package.js",
+    "package:vsix": "node -e \"require('fs').rmSync('change-groups.vsix',{force:true})\" && npx --yes @vscode/vsce package --no-dependencies --allow-missing-repository --out change-groups.vsix",
+    "package": "npm run check && npm run package:vsix"
+  },
+  "devDependencies": {}
+}

@@ -264,7 +264,10 @@
 
           <div class="editor-label">
             <label id="editorBodyLabel" for="jsonEditor">JSON Body</label>
-            <button id="formatJsonButton" class="text-button" type="button">格式化</button>
+            <div class="editor-label-actions">
+              <button id="expandEditorButton" class="text-button" type="button" aria-label="在大窗口中编辑 JSON">⛶ 放大</button>
+              <button id="formatJsonButton" class="text-button" type="button">格式化</button>
+            </div>
           </div>
           <textarea id="jsonEditor" spellcheck="false" aria-describedby="editorError"></textarea>
           <p id="editorError" class="field-error" role="alert"></p>

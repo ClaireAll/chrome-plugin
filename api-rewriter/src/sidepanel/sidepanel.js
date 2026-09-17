@@ -89,6 +89,7 @@ const elements = {
   editorUrl: document.getElementById("editorUrl"),
   autoRuleNote: document.getElementById("autoRuleNote"),
   editorBodyLabel: document.getElementById("editorBodyLabel"),
+  expandEditorButton: document.getElementById("expandEditorButton"),
   formatJsonButton: document.getElementById("formatJsonButton"),
   jsonEditor: document.getElementById("jsonEditor"),
   editorError: document.getElementById("editorError"),
@@ -138,6 +139,8 @@ const state = {
   quickApplying: false
 };
 
+let expandedEditor = null;
+
 bindEvents();
 void initialize();
 
@@ -181,6 +184,7 @@ function bindEvents() {
     state.editorText = elements.jsonEditor.value;
     validateEditor();
   });
+  elements.expandEditorButton.addEventListener("click", () => void openExpandedEditor());
   elements.formatJsonButton.addEventListener("click", formatEditorText);
   elements.passOriginalButton.addEventListener("click", () => resolveCurrentPending("original"));
   elements.applyAndContinueButton.addEventListener("click", () => resolveCurrentPending("edited"));
@@ -195,6 +199,7 @@ function bindEvents() {
   elements.confirmDialog.addEventListener("close", restoreDialogFocus);
   elements.mainTabs.addEventListener("keydown", handleMainTabKeydown);
   chrome.tabs.onActivated.addListener(() => void attachCurrentTab());
+  chrome.windows.onRemoved.addListener(handleExpandedEditorWindowRemoved);
 }
 
 // 使用方向键、Home 和 End 在主 Tab 之间移动并激活选项。
@@ -254,6 +259,7 @@ function handleWorkerState(nextSession) {
   state.session = normalizedSession;
   state.recordingChanging = false;
   const currentPending = state.session.currentPending;
+  if (expandedEditor && currentPending?.id !== expandedEditor.pendingId) closeExpandedEditor();
   if (!currentPending || currentPending.id !== state.resolvingPendingId || state.session.error) {
     state.resolvingPendingId = "";
   }
@@ -557,6 +563,79 @@ function formatEditorText() {
   state.editorText = formatJson(parsed.value);
   elements.jsonEditor.value = state.editorText;
   validateEditor();
+}
+
+// 在独立的大窗口中打开当前等待项的 JSON 编辑器。
+async function openExpandedEditor() {
+  const pending = state.session.currentPending;
+  if (!pending || state.view !== "editor") return;
+  if (expandedEditor) {
+    if (Number.isInteger(expandedEditor.windowId)) {
+      try {
+        await chrome.windows.update(expandedEditor.windowId, { focused: true });
+      } catch {
+        closeExpandedEditor();
+      }
+    }
+    if (expandedEditor) return;
+  }
+
+  const channelName = `api-rewriter-editor-${crypto.randomUUID()}`;
+  const channel = new BroadcastChannel(channelName);
+  const editor = { channel, pendingId: pending.id, windowId: null };
+  expandedEditor = editor;
+  channel.addEventListener("message", (event) => {
+    if (expandedEditor !== editor) return;
+    if (event.data?.type === "ready") {
+      channel.postMessage({
+        type: "initialize",
+        bodyLabel: elements.editorBodyLabel.textContent,
+        method: pending.method,
+        url: pending.url,
+        text: state.editorText
+      });
+      return;
+    }
+    if (event.data?.type !== "confirm") return;
+    state.editorText = String(event.data.text || "");
+    elements.jsonEditor.value = state.editorText;
+    if (!validateEditor()) {
+      channel.postMessage({ type: "error", message: elements.editorError.textContent });
+      return;
+    }
+    channel.postMessage({ type: "accepted" });
+  });
+
+  try {
+    const popup = await chrome.windows.create({
+      url: chrome.runtime.getURL(`src/editor/expanded-editor.html?channel=${encodeURIComponent(channelName)}`),
+      type: "popup",
+      width: 1000,
+      height: 760
+    });
+    if (expandedEditor === editor) editor.windowId = popup.id ?? null;
+    else if (Number.isInteger(popup.id)) void chrome.windows.remove(popup.id).catch(() => {});
+  } catch (error) {
+    closeExpandedEditor();
+    elements.editorError.textContent = `无法打开大编辑窗口：${error?.message || "未知错误"}`;
+  }
+}
+
+// 关闭已失效的大编辑窗口并释放其临时通信通道。
+function closeExpandedEditor() {
+  const editor = expandedEditor;
+  if (!editor) return;
+  expandedEditor = null;
+  editor.channel.close();
+  if (Number.isInteger(editor.windowId)) void chrome.windows.remove(editor.windowId).catch(() => {});
+}
+
+// 在用户关闭大编辑窗口后清理通信状态并恢复按钮焦点。
+function handleExpandedEditorWindowRemoved(windowId) {
+  if (expandedEditor?.windowId !== windowId) return;
+  expandedEditor.channel.close();
+  expandedEditor = null;
+  elements.expandEditorButton.focus();
 }
 
 // 校验编辑器 JSON 并同步按钮和无障碍错误状态。
@@ -1187,6 +1266,7 @@ function renderEditor() {
   elements.autoRuleNote.hidden = !pending.activeRuleTitle;
   elements.autoRuleNote.textContent = pending.activeRuleTitle ? `已先应用自动规则：${pending.activeRuleTitle}` : "";
   elements.templateTools.hidden = pending.stage !== INTERCEPT_STAGES.REQUEST;
+  elements.expandEditorButton.hidden = false;
   elements.formatJsonButton.hidden = false;
   elements.editorActions.hidden = false;
   elements.jsonEditor.readOnly = false;
@@ -1209,6 +1289,7 @@ function renderAppliedChange() {
   elements.editorUrl.textContent = change.url;
   elements.editorBodyLabel.textContent = stageLabel(change.stage);
   elements.templateTools.hidden = true;
+  elements.expandEditorButton.hidden = true;
   elements.formatJsonButton.hidden = true;
   elements.editorActions.hidden = true;
   elements.autoRuleNote.hidden = false;

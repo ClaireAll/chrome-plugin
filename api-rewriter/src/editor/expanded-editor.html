@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>放大编辑 JSON</title>
+    <link rel="stylesheet" href="./expanded-editor.css" />
+  </head>
+  <body>
+    <main class="editor-shell">
+      <header class="editor-header">
+        <div>
+          <h1 id="heading">放大编辑 JSON</h1>
+          <div class="request-meta">
+            <span id="method" class="method-badge"></span>
+            <span id="url"></span>
+          </div>
+        </div>
+        <button id="formatButton" class="button button-secondary" type="button" disabled>格式化</button>
+      </header>
+
+      <form id="editorForm" class="editor-form" novalidate>
+        <label id="bodyLabel" for="jsonEditor">JSON Body</label>
+        <textarea id="jsonEditor" spellcheck="false" aria-describedby="editorError" disabled></textarea>
+        <p id="editorError" class="field-error" role="alert">正在读取内容…</p>
+        <footer class="editor-actions">
+          <span class="shortcut-hint">Ctrl / ⌘ + Enter 确定</span>
+          <button id="cancelButton" class="button button-quiet" type="button">取消</button>
+          <button id="confirmButton" class="button button-primary" type="submit" disabled>确定</button>
+        </footer>
+      </form>
+    </main>
+    <script type="module" src="./expanded-editor.js"></script>
+  </body>
+</html>

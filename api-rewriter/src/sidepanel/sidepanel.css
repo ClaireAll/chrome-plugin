@@ -959,6 +959,12 @@ select:disabled {
   font-weight: 800;
 }
 
+.editor-label-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .text-button {
   min-height: 26px;
   border-color: transparent;

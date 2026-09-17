@@ -20,6 +20,7 @@
 | `todo` | todo | Chrome 插件 | 在页面上提供可拖拽的悬浮待办列表，支持提醒、颜色标记和本地已完成记录管理。 |
 | `i18n-search-helper` | I18n Search Helper | VS Code 插件 | 输入中文文案后读取 `zh_CN.json` 匹配 i18n key，并将 VS Code 搜索词切换为 key，用于查找 `BI.i18nText("...")` 等代码引用。 |
 | `task-link` | Task Link | VS Code 插件 | 将 `f-123`、`m-123`、`g-123`、`s-123`、`JSY-123`、`REPORT-123`、`KERNEL-123` 等任务号标注为可打开的任务链接，并兼容 GitLens 与 Git History 的 commit 信息链接显示。 |
+| `change-groups` | Change Groups | VS Code 插件 | 将当前 Git 仓库的未提交变更块按 Bug 分组，支持 AI 文件协议、人工归组和独立分组 Diff。 |
 
 ## 提交更新说明
 
@@ -33,6 +34,8 @@
 
 ### 更新记录
 
+- 2026-09-16: `change-groups` 简化为分组与文件两级视图，文件使用 VS Code 类型图标，支持整文件归组和行内打开文件。
+- 2026-09-15: 新增 `change-groups` VS Code 插件，支持按 Bug 管理未提交 Git hunk，并生成可覆盖安装的 VSIX。
 - 2026-09-15: `api-rewriter` 新增快捷能力配置，支持按接口路径跨域复用规则、持久启用规则、快捷改写初始化响应和相关测试。
 - 2026-09-09: 合并远端 `codex-quota` 桌面额度浮窗和 `feishu-jump` 跳转修复，README 补充桌面工具说明。
 - 2026-09-09: 清理仓库临时产物和旧流程文档，补充分支约定，并整理 `group` 与 `api-rewriter` 的主线改动。

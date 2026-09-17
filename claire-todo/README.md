@@ -1,13 +1,13 @@
-# todo
+# claire-todo
 
-`todo` is a Chrome Manifest V3 extension with a floating global todo list and local JSON completed history.
+`claire-todo` is a Chrome Manifest V3 extension with a floating global todo list and local JSON completed history.
 
 ## Load In Chrome
 
 1. Open `chrome://extensions`.
 2. Enable Developer Mode.
 3. Click `Load unpacked`.
-4. Select `D:\Claire\chrome-plugin\todo`.
+4. Select `D:\Claire\chrome-plugin\claire-todo`.
 
 ## Notes
 

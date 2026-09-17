@@ -4,7 +4,7 @@
 
 ## 分支约定
 
-- `todo` 插件的代码改动提交到 `claire-todo` 分支。
+- `claire-todo` 插件独立放在 `claire-todo/` 目录，代码改动提交到 `main` 分支。
 - 其它插件和仓库整理改动提交到 `main` 分支。
 
 ## 插件目录
@@ -18,6 +18,7 @@
 | `group` | group | Chrome 插件 | 将页面保存到本地分组中，支持分组图标/颜色、快捷固定、内联重命名和批量打开，便于按工作上下文快速恢复一组相关页面。 |
 | `style` | Style Inspector | Chrome 插件 | 在任意页面叠加 DOM padding、margin、border、gap、尺寸、字体和颜色标注，支持点击/框选元素、分析自身或内部元素、按配置显示标注，并可点击标签切换右下角详情卡用于视觉验收和样式排查。 |
 | `todo` | todo | Chrome 插件 | 在页面上提供可拖拽的悬浮待办列表，支持提醒、颜色标记和本地已完成记录管理。 |
+| `claire-todo` | claire-todo | Chrome 插件 | 独立保留 Claire Todo 版本，提供页面悬浮待办、提醒、颜色标记和本地已完成记录管理。 |
 | `i18n-search-helper` | I18n Search Helper | VS Code 插件 | 输入中文文案后读取 `zh_CN.json` 匹配 i18n key，并将 VS Code 搜索词切换为 key，用于查找 `BI.i18nText("...")` 等代码引用。 |
 | `task-link` | Task Link | VS Code 插件 | 将 `f-123`、`m-123`、`g-123`、`s-123`、`JSY-123`、`REPORT-123`、`KERNEL-123` 等任务号标注为可打开的任务链接，并兼容 GitLens 与 Git History 的 commit 信息链接显示。 |
 | `change-groups` | Change Groups | VS Code 插件 | 将当前 Git 仓库的未提交变更块按 Bug 分组，支持 AI 文件协议、人工归组和独立分组 Diff。 |
@@ -34,6 +35,7 @@
 
 ### 更新记录
 
+- 2026-09-17：从 `claire-todo` 分支独立保留 Todo 插件为 `claire-todo/`，原 `todo/` 目录保持不变。
 - 2026-09-16: `change-groups` 简化为分组与文件两级视图，文件使用 VS Code 类型图标，支持整文件归组和行内打开文件。
 - 2026-09-15: 新增 `change-groups` VS Code 插件，支持按 Bug 管理未提交 Git hunk，并生成可覆盖安装的 VSIX。
 - 2026-09-15: `api-rewriter` 新增快捷能力配置，支持按接口路径跨域复用规则、持久启用规则、快捷改写初始化响应和相关测试。

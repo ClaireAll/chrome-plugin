@@ -17,12 +17,19 @@ function createJumpSuggestion(text) {
     return [];
   }
 
-  const normalizedKey = taskUrlBuilder.normalizeTaskKey(trimmedText);
+  const numericKey = /^#?(\d+)$/.exec(trimmedText);
+  if (numericKey) {
+    const id = numericKey[1];
+    return [['f', '缺陷'], ['g', '指派'], ['s', 's 类型任务']].map(([prefix, label]) => ({
+      content: `${prefix}-${id}`,
+      description: `打开${label} <match>${prefix}-${id}</match>`,
+    }));
+  }
 
   return [
     {
       content: trimmedText,
-      description: `跳转到飞书任务 <match>${escapeDescription(normalizedKey)}</match>`,
+      description: `跳转到任务 <match>${escapeDescription(trimmedText)}</match>`,
     },
   ];
 }
@@ -42,10 +49,15 @@ function openTaskUrl(url, disposition) {
 }
 
 chrome.omnibox.setDefaultSuggestion({
-  description: '输入飞书任务编号，回车跳转到任务详情',
+  description: '输入任务编号，回车跳转到任务详情',
 });
 
 chrome.omnibox.onInputChanged.addListener((text, suggest) => {
+  chrome.omnibox.setDefaultSuggestion({
+    description: /^#?\d+$/.test(String(text).trim())
+      ? '回车打开需求；选择下方建议打开其他类型'
+      : '输入任务编号，回车跳转到任务详情',
+  });
   suggest(createJumpSuggestion(text));
 });
 

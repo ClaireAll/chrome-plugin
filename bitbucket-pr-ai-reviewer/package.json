@@ -1,9 +1,0 @@
-{
-  "name": "bitbucket-pr-ai-reviewer",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "check": "node --check src/content.js && node --check src/pr-url-match.js && node --check src/panel-position.js && node --check src/image-attachments.js && node --check src/bitbucket-client.js && node --check src/deepseek-client.js && node --check src/review-engine.js && node --check src/service-worker.js"
-  },
-  "devDependencies": {}
-}

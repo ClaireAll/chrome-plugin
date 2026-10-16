@@ -119,7 +119,7 @@ function showRuntimeError(error) {
 }
 
 function renderManage() {
-  const groups = searchTree(state.data, state.query);
+  const groups = searchTree(state.data, state.query).toSorted((left, right) => Number(left.hidden === true) - Number(right.hidden === true));
   const selected = state.data.groups.find((group) => group.id === state.selectedGroupId) || state.data.groups[0];
   const selectedPages = selected?.pages || [];
   const selectedColor = selected ? getGroupColor(selected) : "";
@@ -184,15 +184,18 @@ function renderManage() {
 function renderGroupButton(group) {
   const color = getGroupColor(group);
   return `
-    <button type="button" draggable="true" data-drag-kind="group" data-action="select-group" data-group-id="${group.id}" class="group-item ${
+    <div draggable="true" data-drag-kind="group" data-group-id="${group.id}" class="group-item ${
       group.id === state.selectedGroupId ? "active" : ""
     }" style="--group-color: ${escapeAttribute(color)}">
+      <button type="button" class="group-item-select" data-action="select-group" data-group-id="${escapeAttribute(group.id)}">
       <span class="group-item-icon">${escapeHtml(getGroupIcon(group))}</span>
       <span class="group-item-title">
         <span class="group-item-name">${escapeHtml(group.name)}</span>
         <small>（${group.pages.length} 个页面）</small>
       </span>
-    </button>
+      </button>
+      ${renderIconButton("toggle-group-visibility", group.hidden ? "eye-off" : "eye", group.hidden ? "显示分组入口" : "隐藏分组入口", `data-group-id="${escapeAttribute(group.id)}" aria-pressed="${group.hidden !== true}"`, "group-visibility")}
+    </div>
   `;
 }
 
@@ -299,6 +302,8 @@ function renderIconButton(action, icon, label, attrs = "", variant = "") {
 
 function svgIcon(name) {
   const icons = {
+    eye: `<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle>`,
+    "eye-off": `<path d="m3 3 18 18"></path><path d="M10.6 5.1 12 5c6.5 0 10 7 10 7a19 19 0 0 1-3 4M6.5 6.5A20 20 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5.5-1.5"></path><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>`,
     "external-link": `
       <path d="M14 3h5v5"></path>
       <path d="M10 14 19 5"></path>
@@ -427,6 +432,14 @@ async function handleClick(event) {
   if (action === "save-as-file") await saveAsFile();
   if (action === "save-public-url") await savePublicUrl();
   if (action === "select-group") selectGroup(target.dataset.groupId);
+  if (action === "toggle-group-visibility") {
+    const group = state.data.groups.find((item) => item.id === target.dataset.groupId);
+    if (group) {
+      group.hidden = !group.hidden;
+      group.updatedAt = new Date().toISOString();
+      await persistData("分组入口显示状态已更新");
+    }
+  }
   if (action === "rename-group" || action === "edit-group-name") startGroupRename(target.dataset.groupId);
   if (action === "delete-group") await deleteSelectedGroup(target.dataset.groupId);
   if (action === "toggle-add-page") toggleAddPagePopup(target.dataset.groupId);

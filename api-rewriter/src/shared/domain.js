@@ -1,6 +1,7 @@
 import { DATA_FILE_VERSION, INTERCEPT_STAGES } from "./constants.js";
 
 const QUICK_ENDPOINTS = [
+  "/decision/v2/system/info",
   "/decision/v1/version/resource",
   "/decision/v1/version/left",
   "/decision/v1/user/platform-info",
@@ -12,6 +13,7 @@ const QUICK_ENDPOINTS = [
   "/decision/v1/version"
 ];
 const QUICK_PROJECT_FILES_ENDPOINT = "/v2/platform/assets/projects/:projectId/files";
+const QUICK_SYSTEM_INFO_V2_ENDPOINT = "/decision/v2/system/info";
 
 const CORP_PRESETS = Object.freeze({
   normal: { third: false, corpType: 0, subCorpType: "Default", subIntegrated: false, odmType: "none" },
@@ -101,6 +103,17 @@ export function normalizeQuickConfig(input, originalValues = {}) {
     if (Object.hasOwn(originals, name) && JSON.stringify(config[name]) === JSON.stringify(originals[name])) {
       config[name] = defaults[name];
     }
+  }
+  if (config.role === 2) {
+    Object.assign(config, {
+      groupRole: null,
+      platformRole: null,
+      publishAuth: null,
+      removeCaseAuth: null,
+      projectAuth: null,
+      policiesEnabled: false,
+      policies: []
+    });
   }
   return config;
 }
@@ -199,7 +212,7 @@ export function matchesQuickConfig(config, method, url, stage) {
       || config.publishAuth !== null || config.removeCaseAuth !== null || config.policiesEnabled;
   }
   if (endpoint === "/decision/v1/group/switch/shorturl") return config.role !== null || config.groupRole !== null;
-  if (endpoint === "/decision/v1/system/info") {
+  if (endpoint === "/decision/v1/system/info" || endpoint === QUICK_SYSTEM_INFO_V2_ENDPOINT) {
     return config.corpPreset !== null || config.deployType !== null || config.productEdition !== null
       || config.betaEnabled;
   }
@@ -215,7 +228,7 @@ export function matchesQuickConfig(config, method, url, stage) {
   if (endpoint === "/decision/v1/portal/setting") {
     return config.portalEnabled !== null || config.mobileHomeDirectEnabled !== null;
   }
-  if (endpoint === QUICK_PROJECT_FILES_ENDPOINT) return config.projectAuth !== null;
+  if (endpoint === QUICK_PROJECT_FILES_ENDPOINT) return config.projectAuth !== null || config.role === 2;
   return Boolean(endpoint);
 }
 
@@ -239,9 +252,11 @@ export function applyQuickConfig(input, config, method, url, stage, context = {}
     if (quick.groupRole !== null || quick.role === 2) data.groupRole = quick.groupRole ?? 1;
   }
   else if (endpoint === QUICK_PROJECT_FILES_ENDPOINT) {
-    if (!applyQuickProject(data, quick.projectAuth, context.userId)) return { value: input, applied: false };
+    const projectAuth = quick.projectAuth ?? (quick.role === 2 ? "view" : null);
+    if (!applyQuickProject(data, projectAuth, context.userId)) return { value: input, applied: false };
   }
   else if (endpoint === "/decision/v1/system/info") applyQuickSystem(data, quick);
+  else if (endpoint === QUICK_SYSTEM_INFO_V2_ENDPOINT) applyQuickSystemV2(data, quick);
   else if (endpoint === "/decision/v1/version/resource") {
     if (quick.maxRowSize !== null) data.maxRowSize = quick.maxRowSize;
     if (quick.maxMemPerTaskMB !== null) data.maxMemPerTaskMB = quick.maxMemPerTaskMB;
@@ -313,6 +328,27 @@ export function detectQuickOriginalValues(input, method, url, stage, context = {
     if (timezone !== null) values.timezone = timezone;
     if (timeFormat !== null) values.timeFormat = timeFormat;
     if (weekStart !== null) values.weekStart = weekStart;
+    return values;
+  }
+  if (endpoint === QUICK_SYSTEM_INFO_V2_ENDPOINT) {
+    const corp = isPlainObject(input.data.corp) ? input.data.corp : {};
+    const deployment = isPlainObject(input.data.deployment) ? input.data.deployment : {};
+    const features = isPlainObject(input.data.features) ? input.data.features : {};
+    const values = Array.isArray(features.betaFunc)
+      ? { betaFunctions: normalizeNumberList(features.betaFunc, BETA_FUNCTIONS) }
+      : {};
+    const deployType = normalizeOptionalEnum(deployment.deployType, ["saas", "private-cloud"]);
+    const productEdition = normalizeOptionalEnum(deployment.productEdition, ["domestic", "international"]);
+    if (deployType !== null) values.deployType = deployType;
+    if (productEdition !== null) values.productEdition = productEdition;
+    if (corp.subIntegrated === true) {
+      values.corpPreset = "fusion";
+      return values;
+    }
+    const corpPreset = ({ 0: "normal", 21: "dingtalk", 22: "wecom", 23: "jiandaoyun", 24: "lark", 25: "larkSelf", 26: "youzan" })[
+      Number(corp.corpType)
+    ];
+    if (corpPreset || corp.third === false) values.corpPreset = corpPreset || "normal";
     return values;
   }
   if (endpoint !== "/decision/v1/system/info") return {};
@@ -387,6 +423,32 @@ function applyQuickSystem(data, quick) {
   if (quick.deployType !== null) data.deployType = quick.deployType;
   if (quick.productEdition !== null) data.productEdition = quick.productEdition;
   if (quick.betaEnabled) data.betaFunc = [...quick.betaFunctions];
+}
+
+// 修改新版系统信息接口中的企业接入形态、部署区域和灰度能力。
+function applyQuickSystemV2(data, quick) {
+  const preset = CORP_PRESETS[quick.corpPreset];
+  if (preset) {
+    const corp = isPlainObject(data.corp) ? data.corp : {};
+    data.corp = corp;
+    Object.assign(corp, {
+      third: preset.third,
+      corpType: preset.corpType,
+      subCorpType: preset.subCorpType,
+      subIntegrated: preset.subIntegrated
+    });
+  }
+  if (quick.deployType !== null || quick.productEdition !== null) {
+    const deployment = isPlainObject(data.deployment) ? data.deployment : {};
+    data.deployment = deployment;
+    if (quick.deployType !== null) deployment.deployType = quick.deployType;
+    if (quick.productEdition !== null) deployment.productEdition = quick.productEdition;
+  }
+  if (quick.betaEnabled) {
+    const features = isPlainObject(data.features) ? data.features : {};
+    data.features = features;
+    features.betaFunc = [...quick.betaFunctions];
+  }
 }
 
 // 修改版本有效期状态并同步当前商业版本。

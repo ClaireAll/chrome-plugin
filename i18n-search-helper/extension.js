@@ -38,8 +38,22 @@ async function runI18nKeyAction(action) {
     if (!query) return;
 
     const locale = await loadLocaleEntries();
-    const matches = findLocaleMatches(locale.entries, query);
+    let entries = locale.entries;
+    if (action === "editor") {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage("\u8bf7\u5148\u6253\u5f00\u8981\u641c\u7d22\u7684\u6587\u4ef6\u3002");
+        return;
+      }
+      entries = filterEntriesUsedInText(entries, editor.document.getText());
+    }
+
+    const matches = findLocaleMatches(entries, query);
     if (!matches.length) {
+      if (action === "editor") {
+        vscode.window.showInformationMessage(`\u5f53\u524d\u6587\u4ef6\u4e2d\u6ca1\u6709\u627e\u5230\u4e0e\u300c${query}\u300d\u5bf9\u5e94\u7684 i18n key\u3002`);
+        return;
+      }
       vscode.window.showInformationMessage(`\u6ca1\u6709\u5728 ${locale.relativePath} \u4e2d\u627e\u5230\u300c${query}\u300d\u3002`);
       return;
     }
@@ -365,6 +379,14 @@ function findLocaleMatches(entries, query) {
   return matches
     .sort((left, right) => right.score - left.score || left.key.localeCompare(right.key))
     .slice(0, 40);
+}
+
+// 仅保留当前文件中实际出现的完整 i18n key，避免短 key 误命中长 key。
+function filterEntriesUsedInText(entries, text) {
+  return entries.filter((entry) => {
+    const escapedKey = entry.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^A-Za-z0-9_.-])${escapedKey}($|[^A-Za-z0-9_.-])`).test(text);
+  });
 }
 
 function normalizeText(text) {

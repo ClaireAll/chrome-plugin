@@ -393,6 +393,7 @@ function normalizeGroup(group) {
     name,
     icon: sanitizeIcon(group.icon),
     color: sanitizeColor(group.color),
+    hidden: group.hidden === true,
     createdAt: String(group.createdAt || now),
     updatedAt: String(group.updatedAt || group.createdAt || now),
     pages,

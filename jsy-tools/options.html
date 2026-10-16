@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jsy-tools · 插件配置</title>
+  <link rel="icon" href="icons/icon-32.png">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="icons/icon-128.png" width="38" height="38" alt=""><div><h1>jsy-tools</h1><p>九数云效率工具</p></div></div>
+    <span class="version">v0.1.0</span>
+  </header>
+  <main aria-label="能力配置">
+    <section class="feature" aria-labelledby="feature-title">
+      <div class="feature-top">
+        <span class="feature-icon" aria-hidden="true"><svg width="25" height="25" viewBox="0 0 24 24" fill="none"><path d="M12 15V3m0 0L7 8m5-5 5 5M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <div class="feature-heading"><h2 id="feature-title">快捷上传excel</h2><p id="feature-description">将 Excel 拖入项目页面，自动上传并加入当前项目。</p></div>
+        <span id="feature-state" class="feature-state">已开启</span>
+        <label class="switch"><input id="quick-upload" type="checkbox" role="switch" checked aria-labelledby="feature-title" aria-describedby="feature-description"><span class="track" aria-hidden="true"></span></label>
+      </div>
+      <div class="feature-details">
+        <div class="tags"><span>支持多文件</span><span>仅首个工作表</span><span>第一行为表头</span></div>
+        <details class="usage">
+          <summary>使用说明<span class="chevron" aria-hidden="true"></span></summary>
+          <div class="usage-content"><dl>
+            <div><dt>自动生效</dt><dd>在九数云 HTTPS 域名及 http://localhost:10001 的项目页面，拖入文件即可。</dd></div>
+            <div><dt>静默导入</dt><dd>页面不显示提示、进度或结果浮层。</dd></div>
+            <div><dt>按需关闭</dt><dd>关闭能力后，恢复页面原有的拖拽行为。</dd></div>
+          </dl></div>
+        </details>
+      </div>
+    </section>
+    <section class="feature" aria-labelledby="recent-feature-title">
+      <div class="feature-top">
+        <span class="feature-icon" aria-hidden="true"><svg width="25" height="25" viewBox="0 0 24 24" fill="none"><path d="M4 7V3m0 4h4M4 7a9 9 0 1 1-1 8m9-9v6l4 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <div class="feature-heading"><h2 id="recent-feature-title">最近操作快捷栏</h2><p id="recent-description">在顶部直接使用最近操作，跨项目共用。</p></div>
+        <span id="recent-state" class="feature-state">已开启</span>
+        <label class="switch"><input id="recent-actions" type="checkbox" role="switch" checked aria-labelledby="recent-feature-title" aria-describedby="recent-description"><span class="track" aria-hidden="true"></span></label>
+      </div>
+      <div class="feature-details">
+        <div class="tags"><span>自动记录</span><span>跨项目共用</span><span>单行显示</span></div>
+        <details class="usage">
+          <summary>使用说明<span class="chevron" aria-hidden="true"></span></summary>
+          <div class="usage-content"><dl>
+            <div><dt>记录操作</dt><dd>从原 + 菜单或快捷按钮触发具体操作时记录，最近使用的排最前，同类操作去重。</dd></div>
+            <div><dt>按宽度显示</dt><dd>保留原工具栏左侧宽度，放不下的整颗按钮隐藏，不换行；没有记录时留空。</dd></div>
+            <div><dt>本地共用</dt><dd>记录保存在插件本地，在同一浏览器配置下跨项目、跨标签页共用；刷新和重启后保留。</dd></div>
+            <div><dt>原有行为</dt><dd>原 + 菜单和右侧按钮保留，权限、禁用条件和操作确认沿用产品规则。关闭能力后恢复原工具栏。</dd></div>
+          </dl></div>
+        </details>
+      </div>
+    </section>
+    <footer><span class="saved-dot" aria-hidden="true"></span><span id="save-status" role="status" aria-live="polite">设置自动保存</span><span class="footer-brand">jsy-tools</span></footer>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

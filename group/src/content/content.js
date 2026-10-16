@@ -285,11 +285,11 @@
     const activeGroupId = state.activePreviewGroupId;
     const items = groups
       .map((group) => ({ ...group, name: String(group.name || "").trim() }))
-      .filter((group) => group.name);
+      .filter((group) => group.name && group.hidden !== true);
     const hasSelectedGroup = items.some(
       (group) => (activeGroupId && group.id === activeGroupId) || group.name.toLowerCase() === activeNameLower
     );
-    if (activeName && !hasSelectedGroup) {
+    if (activeName && !hasSelectedGroup && !groups.some((group) => group.id === activeGroupId || group.name.toLowerCase() === activeNameLower)) {
       items.push({ id: `draft-${activeName}`, name: activeName, icon: "", color: "" });
     }
 

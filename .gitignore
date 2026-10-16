@@ -1,8 +1,6 @@
 .DS_Store
 .idea/
 *.iml
-bitbucket-pr-ai-reviewer/src/local-default-settings.js
-bitbucket-pr-ai-reviewer/local-default-settings.js
 .worktrees/
 .serena/
 .superpowers/

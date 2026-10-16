@@ -338,6 +338,50 @@ test("detects the original enterprise type before quick overrides", () => {
   assert.deepEqual(detected, { corpPreset: "fusion" });
 });
 
+test("v2 system info detects the original enterprise type", () => {
+  const detected = quickDomain.detectQuickOriginalValues?.(
+    {
+      data: {
+        corp: { third: true, corpType: 22, subCorpType: "Default", subIntegrated: false },
+        deployment: { deployType: "saas", productEdition: "domestic" },
+        features: { betaFunc: [0, 12] }
+      }
+    },
+    "GET",
+    "/decision/v2/system/info",
+    "response"
+  );
+
+  assert.deepEqual(detected, {
+    corpPreset: "wecom",
+    betaFunctions: [0, 12],
+    deployType: "saas",
+    productEdition: "domestic"
+  });
+});
+
+test("v2 system info applies the selected enterprise type", () => {
+  const source = {
+    data: {
+      corp: { third: true, corpType: 24, subCorpType: "Default", subIntegrated: false },
+      deployment: { deployType: "saas", productEdition: "domestic" },
+      features: { betaFunc: [] }
+    }
+  };
+  const config = normalizeQuickConfig({ corpPreset: "wecom" });
+
+  const result = applyQuickConfig(source, config, "GET", "/decision/v2/system/info", "response");
+
+  assert.equal(result.applied, true);
+  assert.deepEqual(result.value.data.corp, {
+    third: true,
+    corpType: 22,
+    subCorpType: "Default",
+    subIntegrated: false
+  });
+  assert.equal(source.data.corp.corpType, 24);
+});
+
 test("已移除的企业外观配置不会继续改写接口", () => {
   const source = {
     data: {

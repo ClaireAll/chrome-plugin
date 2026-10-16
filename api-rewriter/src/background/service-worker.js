@@ -216,7 +216,7 @@ function createSession(tab, port, data) {
     pending: new Map(),
     nextSequence: 0,
     generation: 0,
-    languageScriptId: "",
+    pageOverrideScriptId: "",
     quickUserId: "",
     quickOriginalValues: locale ? { locale } : {}
   };
@@ -245,10 +245,11 @@ async function startRecording(session) {
         { urlPattern: "*", resourceType: "Fetch", requestStage: "Response" }
       ]
     });
+    await syncQuickUserId(session);
     session.connected = true;
     session.recording = true;
     session.activeRuleIds = createActiveRuleIds(session.data.rules, session.data.interfaceFilters);
-    await syncLanguageOverride(session);
+    await syncPageOverrides(session);
     session.error = "";
     session.notice = "";
   } catch (error) {
@@ -262,11 +263,29 @@ async function startRecording(session) {
   broadcastState(session);
 }
 
+// 从当前页面运行时读取用户 ID，避免项目权限改写依赖用户信息接口的返回顺序。
+async function syncQuickUserId(session) {
+  try {
+    const result = await chrome.debugger.sendCommand(
+      { tabId: session.tabId },
+      "Runtime.evaluate",
+      {
+        expression: "globalThis.BI?.personal?.userId ?? ''",
+        returnByValue: true
+      }
+    );
+    const userId = result?.result?.value;
+    if (userId !== undefined && userId !== null && String(userId)) {
+      session.quickUserId = String(userId);
+    }
+  } catch {}
+}
+
 // 原样放行等待项并解除调试器，同时保留当前实时请求列表。
 async function stopRecording(session, notice) {
   session.generation += 1;
   const wasConnected = session.connected;
-  if (wasConnected) await removeLanguageOverride(session);
+  if (wasConnected) await removePageOverrides(session);
   session.connected = false;
   session.recording = false;
   const pendingItems = [...session.pending.values()];
@@ -293,7 +312,7 @@ async function applyQuickConfigAndReload(port) {
   if (!session.connected || !session.recording) {
     throw new Error(session.error || "无法启动接口记录");
   }
-  if (wasRecording) await syncLanguageOverride(session);
+  if (wasRecording) await syncPageOverrides(session);
   session.notice = "快捷配置已应用，页面正在刷新";
   broadcastState(session);
   await chrome.tabs.reload(session.tabId);
@@ -313,7 +332,7 @@ async function syncSessionData(port, input) {
   session.data = context.data;
   session.activeRuleIds = createActiveRuleIds(session.data.rules, session.data.interfaceFilters);
   if (session.connected && session.recording && previousQuickConfig !== JSON.stringify(session.data.quickConfig)) {
-    await syncLanguageOverride(session);
+    await syncPageOverrides(session);
   }
   const nextFilterKeys = new Set(session.data.interfaceFilters.map(
     (filter) => buildInterfaceKey(filter.method, filter.url)
@@ -432,6 +451,9 @@ async function handlePausedRequest(session, params) {
     return;
   }
 
+  if (stage === INTERCEPT_STAGES.RESPONSE && method === "GET" && quickEnabled && !session.quickUserId) {
+    await syncQuickUserId(session);
+  }
   if (stage === INTERCEPT_STAGES.RESPONSE && method === "GET" && /\/decision\/v1\/user\/info(?:[?#]|$)/.test(url)) {
     const userId = parsed.value?.data?.userId;
     if (userId !== undefined && userId !== null) session.quickUserId = String(userId);
@@ -785,7 +807,7 @@ async function cleanupSession(tabId, notice, errorMessage = "") {
   session.closing = true;
   session.generation += 1;
   const wasConnected = session.connected;
-  if (wasConnected) await removeLanguageOverride(session);
+  if (wasConnected) await removePageOverrides(session);
   session.connected = false;
   const pendingItems = [...session.pending.values()];
   session.pending.clear();
@@ -803,39 +825,48 @@ async function cleanupSession(tabId, notice, errorMessage = "") {
   safePostMessage(session.port, { type: WORKER_MESSAGE_TYPES.STATE, state: detachedState });
 }
 
-// 按快捷配置安装或移除下一次页面加载时的语言覆盖脚本。
-async function syncLanguageOverride(session) {
-  await removeLanguageOverride(session);
-  if (!session.data.quickConfig.locale) return;
+// 按快捷配置安装下一次页面加载时的语言和系统运行时覆盖脚本。
+async function syncPageOverrides(session) {
+  await removePageOverrides(session);
+  const quickConfig = session.data.quickConfig;
+  const systemResult = applyQuickConfig(
+    { data: {} },
+    quickConfig,
+    "GET",
+    "/decision/v1/system/info",
+    INTERCEPT_STAGES.RESPONSE
+  );
+  const systemOverride = systemResult.applied ? systemResult.value.data : null;
+  if (!quickConfig.locale && !systemOverride) return;
   const result = await chrome.debugger.sendCommand(
     { tabId: session.tabId },
     "Page.addScriptToEvaluateOnNewDocument",
-    { source: createLanguageOverrideSource(session.data.quickConfig.locale) }
+    { source: createPageOverrideSource(quickConfig.locale, systemOverride) }
   );
-  session.languageScriptId = String(result.identifier || "");
+  session.pageOverrideScriptId = String(result.identifier || "");
 }
 
-// 移除当前会话已安装的语言覆盖脚本。
-async function removeLanguageOverride(session) {
-  if (!session.languageScriptId) return;
+// 移除当前会话已安装的页面运行时覆盖脚本。
+async function removePageOverrides(session) {
+  if (!session.pageOverrideScriptId) return;
   try {
     await chrome.debugger.sendCommand(
       { tabId: session.tabId },
       "Page.removeScriptToEvaluateOnNewDocument",
-      { identifier: session.languageScriptId }
+      { identifier: session.pageOverrideScriptId }
     );
   } catch {}
-  session.languageScriptId = "";
+  session.pageOverrideScriptId = "";
 }
 
-// 生成只影响当前页面运行时、不写入真实 localStorage 的语言覆盖脚本。
-function createLanguageOverrideSource(locale) {
+// 生成只影响当前页面运行时、不写入真实存储的快捷配置覆盖脚本。
+function createPageOverrideSource(locale, systemOverride) {
   const browserLocale = {
     zh_cn: "zh-CN", zh_tw: "zh-TW", en_us: "en-US", ja_jp: "ja-JP", vi_vn: "vi-VN",
     ru_ru: "ru-RU", fr_fr: "fr-FR", es_es: "es-ES", th_th: "th-TH", id_id: "id-ID",
     ko_kr: "ko-KR", de_de: "de-DE", pt_pt: "pt-PT", km_kh: "km-KH"
   }[locale] || "zh-CN";
-  return `(() => {
+  const languageSource = locale ? `
     const locale = ${JSON.stringify(locale)};
     const browserLocale = ${JSON.stringify(browserLocale)};
     const originalGetItem = Storage.prototype.getItem;
@@ -846,7 +877,56 @@ function createLanguageOverrideSource(locale) {
     };
     Object.defineProperty(Navigator.prototype, "language", { configurable: true, get: () => browserLocale });
     Object.defineProperty(Navigator.prototype, "languages", { configurable: true, get: () => [browserLocale] });
-  })();`;
+  ` : "";
+  const systemSource = systemOverride ? `
+    const systemOverride = ${JSON.stringify(systemOverride)};
+    const applySystemOverride = (system) => {
+      const target = system && typeof system === "object" ? system : {};
+      const config = systemOverride.config;
+      Object.assign(target, systemOverride);
+      if (config) target.config = Object.assign({}, target.config && typeof target.config === "object" ? target.config : {}, config);
+      return target;
+    };
+    const observed = new WeakSet();
+    const observeBI = (bi) => {
+      if (!bi || typeof bi !== "object") return;
+      if (observed.has(bi)) {
+        applySystemOverride(bi.system);
+        return;
+      }
+      observed.add(bi);
+      const descriptor = Object.getOwnPropertyDescriptor(bi, "system");
+      if (descriptor && descriptor.configurable === false) {
+        applySystemOverride(bi.system);
+        return;
+      }
+      let system = applySystemOverride(bi.system);
+      Object.defineProperty(bi, "system", {
+        configurable: true,
+        enumerable: true,
+        get: () => system,
+        set: (value) => { system = applySystemOverride(value); }
+      });
+    };
+    let bi = globalThis.BI;
+    if (bi && typeof bi === "object") {
+      observeBI(bi);
+    } else {
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, "BI");
+      if (!descriptor || descriptor.configurable !== false) {
+        Object.defineProperty(globalThis, "BI", {
+          configurable: true,
+          enumerable: true,
+          get: () => bi,
+          set: (value) => {
+            bi = value;
+            observeBI(bi);
+          }
+        });
+      }
+    }
+  ` : "";
+  return `(() => {${languageSource}${systemSource}})();`;
 }
 
 // 原样放行已从共享队列中同步取出的暂停请求快照。

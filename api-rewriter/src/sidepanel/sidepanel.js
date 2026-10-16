@@ -164,6 +164,7 @@ function bindEvents() {
   elements.quickForm.addEventListener("submit", handleQuickSubmit);
   elements.quickForm.addEventListener("input", markQuickDraftDirty);
   elements.quickForm.addEventListener("change", markQuickDraftDirty);
+  elements.quickForm.elements.namedItem("role").addEventListener("change", () => syncViewerIdentityControls(true));
   elements.quickForm.addEventListener("click", handleQuickOptionClick);
   elements.resetQuickButton.addEventListener("click", resetQuickForm);
   elements.rulesSubtab.addEventListener("click", () => setSavedKind("rules"));
@@ -447,10 +448,10 @@ function readOptionalBoolean(value) {
   return value === "true" ? true : value === "false" ? false : null;
 }
 
-// 用默认值重置快捷配置草稿，等待用户主动应用。
+// 清空快捷配置并复用现有提交链立即保存、刷新页面。
 function resetQuickForm() {
   fillQuickForm(createDefaultQuickConfig());
-  markQuickDraftDirty();
+  elements.quickForm.requestSubmit();
 }
 
 // 将浏览器中保存的规则与请求体模板导出为 JSON 文件。
@@ -1022,11 +1023,41 @@ function renderQuickIdentityOutcome() {
   const publish = publishAuth === undefined ? original : publishAuth ? "允许发布" : "禁止发布";
   const removeCase = removeCaseAuth === undefined ? original : removeCaseAuth ? "允许下架" : "禁止下架";
   const project = viewer
-    ? "无项目编辑权限（查看者身份优先）"
+    ? "项目查看者"
     : ({ manager: "项目管理员", edit: "项目编辑者", view: "项目查看者" }[
       config.projectAuth ?? originalValues.projectAuth
     ] || original);
-  elements.quickIdentityOutcome.textContent = `当前结果：${space} · ${platform} · ${publish} · ${removeCase} · ${project}`;
+  const lockHint = viewer ? "；查看者身份下附加权限已锁定" : "";
+  elements.quickIdentityOutcome.textContent = `当前结果：${space} · ${platform} · ${publish} · ${removeCase} · ${project}${lockHint}`;
+}
+
+// 根据查看者身份锁定互斥权限，退出查看者时按需恢复接口原值。
+function syncViewerIdentityControls(resetOnUnlock = false) {
+  const form = elements.quickForm;
+  const viewer = normalizeQuickConfig(
+    { role: form.elements.namedItem("role").value },
+    state.session.quickOriginalValues
+  ).role === 2;
+  const lockedValues = {
+    groupRole: "1",
+    platformRole: "-1",
+    publishAuth: "false",
+    removeCaseAuth: "false",
+    projectAuth: "view"
+  };
+  for (const [name, value] of Object.entries(lockedValues)) {
+    const control = form.elements.namedItem(name);
+    if (viewer) control.value = value;
+    else if (resetOnUnlock) control.value = "";
+    control.disabled = viewer;
+  }
+  const policyMode = form.elements.namedItem("policiesEnabled");
+  if (viewer || resetOnUnlock) policyMode.value = "false";
+  policyMode.disabled = viewer;
+  for (const control of form.querySelectorAll('[name="policies"]')) {
+    if (viewer || resetOnUnlock) control.value = "";
+    control.disabled = viewer;
+  }
 }
 
 // 将规范化快捷配置写入各原生表单控件。
@@ -1051,6 +1082,7 @@ function fillQuickForm(input) {
   for (const button of form.querySelectorAll("[data-beta-value]")) {
     button.setAttribute("aria-pressed", String(betaFunctions.includes(Number(button.dataset.betaValue))));
   }
+  syncViewerIdentityControls();
 }
 
 // 渲染当前等待队列的快捷入口。

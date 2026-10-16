@@ -15,6 +15,8 @@ VS Code 搜索辅助插件：输入中文文案后，从项目里的 `zh_CN.json
 - `I18n Search: Search Key in Current File`
 - `I18n Search: Search Key in Files`
 
+“当前文件”模式只会列出当前文件中实际出现过的匹配 key；没有匹配时不会回退到全项目候选。
+
 快捷键：
 
 - `Ctrl+Alt+I`：当前文件搜索 key。

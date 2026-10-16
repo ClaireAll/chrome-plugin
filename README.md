@@ -12,9 +12,9 @@
 | 目录 | 插件名 | 类型 | 用途 |
 | --- | --- | --- | --- |
 | `api-rewriter` | API Rewriter | Chrome 插件 | 在当前标签页的 Side Panel 中按需记录和拦截 Fetch/XHR JSON 接口，支持手动修改 Body、自动规则、请求体模板、持久接口过滤和 JSON 导入导出。 |
-| `bitbucket-pr-ai-reviewer` | Bitbucket PR AI Reviewer | Chrome 插件 | 在 `code.fineres.com` 的 Bitbucket Pull Request 页面内打开审查面板，读取 PR 信息、diff 和项目上下文，并调用 DeepSeek 生成带结构化证据的代码审查建议；同时支持从面板打开飞书项目任务。 |
+| `jsy-tools` | jsy-tools | Chrome 插件 | 九数云效率工具，支持快捷上传 Excel 和跨项目最近操作快捷栏，配置页可独立开关。 |
 | `codex-quota` | Codex Quota | 桌面应用 | 提供跨平台 Electron Codex 额度浮窗，支持托盘入口、额度详情、重置时间展示和主题切换。 |
-| `feishu-jump` | Feishu Task Jumper | Chrome 插件 | 输入飞书项目任务 key，例如 `f-7028807610`、`m-7040569864` 或纯数字任务号，快速打开对应任务详情页；也支持浏览器地址栏 `fs` 关键字跳转。 |
+| `feishu-jump` | Feishu Task Jumper | Chrome 插件 | 输入飞书项目 `f-`、`m-`、`g-`、`s-` 或 Jira `JSY-`、`REPORT-`、`KERNEL-` 任务号，快速打开对应详情页；也支持浏览器地址栏 `fs` 关键字跳转。 |
 | `group` | group | Chrome 插件 | 将页面保存到本地分组中，支持分组图标/颜色、快捷固定、内联重命名和批量打开，便于按工作上下文快速恢复一组相关页面。 |
 | `style` | Style Inspector | Chrome 插件 | 在任意页面叠加 DOM padding、margin、border、gap、尺寸、字体和颜色标注，支持点击/框选元素、分析自身或内部元素、按配置显示标注，并可点击标签切换右下角详情卡用于视觉验收和样式排查。 |
 | `todo` | todo | Chrome 插件 | 在页面上提供可拖拽的悬浮待办列表，支持提醒、颜色标记和本地已完成记录管理。 |
@@ -35,6 +35,7 @@
 
 ### 更新记录
 
+- 2026-10-16：移除已废弃的 Bitbucket PR 审查插件及其全部定义，新增 `jsy-tools`，并更新多个插件的功能与配置。
 - 2026-09-17：从 `claire-todo` 分支独立保留 Todo 插件为 `claire-todo/`，原 `todo/` 目录保持不变。
 - 2026-09-16: `change-groups` 简化为分组与文件两级视图，文件使用 VS Code 类型图标，支持整文件归组和行内打开文件。
 - 2026-09-15: 新增 `change-groups` VS Code 插件，支持按 Bug 管理未提交 Git hunk，并生成可覆盖安装的 VSIX。
@@ -46,15 +47,12 @@
 - 2026-08-11: `todo` 新增工作日、每周、每月定时任务配置，后台按 Chrome alarms 自动生成待办，并优化周完成热力图的任务块展示。
 - 2026-08-11: `task-link` 扩展任务号识别范围，支持 `s-`、`REPORT-`、`KERNEL-` 和自定义链接规则，并补充可安装 VSIX/ZIP 产物。
 - 2026-08-11: `i18n-search-helper` 升级到 0.1.5，支持启动后自动准备搜索上下文、搜索 key/原文切换命令和按工作区补全 `zh_CN.json` 配置。
-- 2026-08-11: `group` 支持将已存在的页面从原分组移动到当前分组，`style` 修正自定义标签尺寸下的标注位置计算，`bitbucket-pr-ai-reviewer` 收紧 memo 与 React Flow 审查规则。
 - 2026-08-07: 新增 `task-link`，支持在 VS Code 中打开飞书项目和 JSY 任务号链接，并生成可安装的 VSIX 与 ZIP 产物。
 - 2026-07-31: 新增 `i18n-search-helper`，支持输入中文文案后匹配 `zh_CN.json` 中的 i18n key，并在 VS Code 全局搜索或当前文件搜索中切换为 key。
 - 2026-07-30: `style` 新增 Style Inspector 插件，支持 DOM 样式标注、点击/框选选择、字体信息、颜色/token 信息、可配置标注颜色和标签详情切换。
-- 2026-07-30: `bitbucket-pr-ai-reviewer` 加强 AI 审查证据链，补充项目上下文读取、结构化 finding 证据、旧版审查记录提示，并收窄 diff 上下文配置范围。
 - 2026-07-30: `group` 优化浮窗和管理页体验，支持分组图标/颜色、分组按钮选择、页面内联重命名、固定快捷访问和页面移动。
 - 2026-07-30: `todo` 新增待办颜色按预设自动轮换，连续新增任务时更容易区分。
 - 2026-07-27: `todo` 优化悬浮待办面板视觉、提醒确认、颜色预设、完成记录只读展示和自适应高度。
 - 2026-07-27: `group` 补充扩展图标资源和 manifest 图标配置。
-- 2026-07-27: `bitbucket-pr-ai-reviewer` 补充本地默认配置示例文件，真实密钥仍保留在被忽略的本地配置中。
 - 2026-07-24: `feishu-jump` 支持通过浏览器地址栏 `fs` 关键字输入任务编号并跳转到飞书任务详情。
 - 2026-07-24: 新增根目录 README，补充插件用途说明和提交更新说明维护约定。

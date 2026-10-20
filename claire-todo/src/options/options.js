@@ -21,9 +21,7 @@ const elements = {
   completedPermissionBadge: document.getElementById("completedPermissionBadge"),
   completedSearch: document.getElementById("completedSearch"),
   createCompletedFile: document.getElementById("createCompletedFile"),
-  optionsLower: document.querySelector(".todo-options-lower"),
   pickCompletedFile: document.getElementById("pickCompletedFile"),
-  railThemePreview: document.querySelector(".todo-rail-theme-preview"),
   requestCompletedPermission: document.getElementById("requestCompletedPermission"),
   scheduledFrequencyButtons: document.querySelectorAll("[data-frequency]"),
   scheduledTaskForm: document.getElementById("scheduledTaskForm"),
@@ -52,7 +50,6 @@ let completedStatus = null;
 let completedMutationBusy = false;
 let settings = { ballSize: BALL_SIZE_DEFAULT, ballThemeColor: "#2563eb", colorPresets: [], recurringTasks: [] };
 let chart = null;
-let lowerAlignmentFrame = 0;
 let weeklyChartFrame = 0;
 let selectedWeeklyStartKey = "";
 
@@ -83,7 +80,6 @@ function renderCompletedRecords() {
     empty.className = "empty-state";
     empty.textContent = "没有匹配的完成记录";
     elements.completedList.append(empty);
-    syncLowerAlignment();
     return;
   }
 
@@ -121,7 +117,6 @@ function renderCompletedRecords() {
     row.append(copy, time, deleteButton);
     elements.completedList.append(row);
   }
-  syncLowerAlignment();
 }
 
 // 根据完成记录文本创建只读文本或链接节点。
@@ -219,7 +214,6 @@ function renderScheduledTasks() {
     empty.className = "scheduled-empty";
     empty.textContent = "暂无定时任务";
     elements.scheduledTaskList.append(empty);
-    syncLowerAlignment();
     return;
   }
 
@@ -240,7 +234,6 @@ function renderScheduledTasks() {
     row.append(copy, deleteButton);
     elements.scheduledTaskList.append(row);
   }
-  syncLowerAlignment();
 }
 
 function renderStats() {
@@ -573,7 +566,13 @@ async function refreshCompletedData(statusOverride = "") {
   } else {
     applyCompletedData(result.data);
     if (result.fileName) completedStatus = { ...completedStatus, fileName: result.fileName };
-    updateCompletedFileCard(statusOverride || formatFileUpdatedAt(result.data) || "已读取完成记录文件");
+    if (result.storage) completedStatus = {
+      ...completedStatus,
+      storage: result.storage,
+      fileSyncError: result.fileSyncError || ""
+    };
+    updateCompletedFileCard(statusOverride || formatFileUpdatedAt(result.data)
+      || (result.storage === "browser" ? "暂无完成记录" : "已读取完成记录文件"));
     return;
   }
   renderCompletedRecords();
@@ -607,6 +606,12 @@ async function showCompletedFileResult(result) {
     await refreshCompletedData();
     return;
   }
+  if (result.reason === "picker_cancelled") return;
+  const recoveryText = completedFileRecoveryText(result.reason, false);
+  if (recoveryText) {
+    elements.completedFileStatus.textContent = recoveryText;
+    return;
+  }
   elements.completedFileStatus.textContent = result.message || "Completed JSON file operation failed";
 }
 
@@ -624,13 +629,17 @@ async function refreshState() {
 }
 
 function applyCompletedStatus(status) {
+  if (status?.storage) completedStatus = { ...completedStatus, storage: status.storage };
   if (!status?.fileName) {
     updateCompletedFileCard();
     return;
   }
   completedStatus = {
     fileName: status.fileName,
-    permission: status.permission || completedStatus?.permission || ""
+    permission: status.permission || completedStatus?.permission || "",
+    storage: status.storage || completedStatus?.storage,
+    bound: status.bound !== false,
+    fileSyncError: status.fileSyncError || ""
   };
   updateCompletedFileCard();
 }
@@ -655,7 +664,48 @@ function completedFileErrorText(message) {
   return status ? `${status} - ${message}` : message;
 }
 
+// 根据文件失败原因给出恢复步骤，避免把格式或磁盘错误误报为权限问题。
+function completedFileRecoveryText(reason, hasFile) {
+  switch (reason) {
+    case "permission_denied":
+      return hasFile
+        ? "记录已保存在浏览器，JSON 文件缺少读写权限。请点击“重新授权”，允许后会自动同步。"
+        : "未获得所选文件的读写权限，请重新选择文件并允许读写。记录仍保存在浏览器中。";
+    case "missing_file":
+      return "记录已保存在浏览器。需要文件备份时，请先选择或新建 JSON 文件。";
+    case "parse_error":
+      return "JSON 文件格式无效，请更换为有效的完成记录文件。原文件未被覆盖，记录仍保存在浏览器中。";
+    case "write_error":
+      return "JSON 文件写入失败，请检查磁盘空间和文件是否被占用。记录仍保存在浏览器中。";
+    case "bind_error":
+      return "文件绑定失败，请重新选择文件。记录仍保存在浏览器中。";
+    case "unsupported":
+      return "当前浏览器不支持本地文件选择，可继续使用浏览器保存完成记录。";
+    case "file_unavailable":
+      return "JSON 文件暂不可用，请重新选择文件。记录仍保存在浏览器中。";
+    default:
+      return "";
+  }
+}
+
 function updateCompletedFileCard(detail = "") {
+  const reason = completedStatus?.fileSyncError || "";
+  const hasFile = Boolean(completedStatus?.fileName) && completedStatus?.bound !== false && reason !== "missing_file";
+  const needsPermission = hasFile && reason === "permission_denied";
+  elements.pickCompletedFile.textContent = hasFile ? "更换文件" : "选择文件";
+  elements.requestCompletedPermission.textContent = needsPermission ? "重新授权" : "权限管理";
+  elements.requestCompletedPermission.disabled = !hasFile;
+  elements.requestCompletedPermission.title = hasFile ? "管理 JSON 文件读写权限" : "请先选择或新建 JSON 文件";
+  if (completedStatus?.storage === "browser") {
+    elements.completedFileName.textContent = "浏览器本地存储";
+    elements.completedPermissionBadge.textContent = "本地保存";
+    elements.completedPermissionBadge.dataset.state = "granted";
+    const recoveryText = completedFileRecoveryText(reason, hasFile);
+    elements.completedFileStatus.textContent = recoveryText || (detail
+      ? `浏览器本地保存 · ${detail}`
+      : "当前保存位置：浏览器本地（JSON 文件可选）");
+    return;
+  }
   const fileName = completedStatus?.fileName || "todo-completed.json";
   const permission = completedStatus?.permission || "";
   const granted = permission === "granted";
@@ -690,25 +740,6 @@ function resizeWeeklyChart() {
   });
 }
 
-function syncLowerAlignment() {
-  if (!elements.optionsLower || !elements.railThemePreview) return;
-  if (lowerAlignmentFrame) globalThis.cancelAnimationFrame(lowerAlignmentFrame);
-  lowerAlignmentFrame = globalThis.requestAnimationFrame(() => {
-    lowerAlignmentFrame = 0;
-    elements.optionsLower.style.marginTop = "";
-    elements.railThemePreview.style.marginTop = "";
-    if (globalThis.matchMedia("(max-width: 1180px)").matches) return;
-
-    const lowerTop = elements.optionsLower.getBoundingClientRect().top;
-    const railTop = elements.railThemePreview.getBoundingClientRect().top;
-    const offset = Math.round(railTop - lowerTop);
-    if (Math.abs(offset) <= 1) return;
-    if (offset > 0) elements.optionsLower.style.marginTop = `${offset}px`;
-    else elements.railThemePreview.style.marginTop = `${Math.abs(offset)}px`;
-    resizeWeeklyChart();
-  });
-}
-
 elements.completedSearch.addEventListener("input", renderCompletedRecords);
 elements.weeklyWeekSelect.addEventListener("change", () => {
   selectedWeeklyStartKey = elements.weeklyWeekSelect.value;
@@ -728,7 +759,13 @@ elements.requestCompletedPermission.addEventListener("click", async () => {
     applyCompletedStatus(result);
     await refreshCompletedData();
   }
-  else elements.completedFileStatus.textContent = result.message;
+  else {
+    completedStatus = { ...completedStatus, storage: "browser", fileSyncError: result.reason };
+    updateCompletedFileCard();
+    if (!completedFileRecoveryText(result.reason, Boolean(completedStatus.fileName))) {
+      elements.completedFileStatus.textContent = result.message || "授权失败，可继续使用浏览器保存完成记录";
+    }
+  }
 });
 elements.addColorPreset.addEventListener("click", () => {
   updateColorPresets([...(settings.colorPresets || []), randomColorPreset()]);
@@ -753,10 +790,7 @@ for (const button of elements.scheduledFrequencyButtons) {
     renderScheduledTaskFrequencyFields();
   });
 }
-globalThis.addEventListener("resize", () => {
-  resizeWeeklyChart();
-  syncLowerAlignment();
-});
+globalThis.addEventListener("resize", resizeWeeklyChart);
 
 populateMonthlyTaskDays();
 renderScheduledTaskFrequencyFields();

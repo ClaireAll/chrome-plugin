@@ -301,7 +301,15 @@
     if (!action || action.disabled || fiber.memoizedProps.disabled) { schedule(); return; }
     replaying = true;
     try {
-      if (confirmingKeys.has(key) || action.fromHistory) await replayConfirmation(fiber, key, container, action.fromHistory);
+      if (confirmingKeys.has(key)) await replayConfirmation(fiber, key, container, action.fromHistory);
+      else if (action.fromHistory) {
+        const menu = historyMenu(container);
+        const onAfterSelect = menu?.props.content.props.onAfterSelect;
+        if (menu?.disabled || typeof onAfterSelect !== "function") throw new Error("未找到原操作的菜单入口，请从原 + 菜单操作");
+        // 嵌套菜单项可能尚未挂载，沿用原菜单的选择回调完成建步。
+        await onAfterSelect({ key });
+        remember(action);
+      }
       else {
         // QuickOperator 的现有回调负责类型转换、插入位置和打开配置窗。
         await fiber.memoizedProps.onItemClick(key);

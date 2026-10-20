@@ -13,7 +13,8 @@
 
 - Unfinished todos are stored in `chrome.storage.local`.
 - The options page can adjust the floating ball theme color and size. The default size is 44px and the supported range is 36-88px.
-- Completed records are written to a selected or newly created JSON file only when a todo is completed. Timed todos also store `durationMs`.
+- Completed records are saved in `chrome.storage.local` when a todo is completed, without requiring file permission. Timed todos also store `durationMs`.
+- A local JSON file is an optional backup. When available, its history is merged with browser records and synchronized; missing permission or file write failures do not block completion. Clear browser data or uninstalling the extension can remove browser-only records.
 - Reminder notifications fire once only when Chrome is running and the alarm is handled on time.
 - Workday, weekly, and monthly scheduled tasks are configured from the options page and are added to unfinished todos by Chrome alarms.
 - Link todos can be added as `Task title https://example.com`, `[Task title](https://example.com)`, or a plain `https://example.com` URL; linked titles open in a new tab from the panel and completed-record list.
@@ -34,6 +35,6 @@
 6. Add `Project Board https://example.com`, confirm it renders as a single-line linked title above the action buttons with the join time below, then edit a plain todo, change its color, set a reminder, and delete another todo.
 7. Bind a new completed JSON file from the options page.
 8. Start multiple todo timers from their alarm icons, confirm they run together, and use the ball timer control to pause or resume all active timers; the ball should show the earliest active timer with a 30-minute circular progress ring whose theme color deepens as it advances.
-9. Confirm an unbound or unauthorized JSON file blocks completion without removing the todo.
+9. Complete a task without binding or authorizing a JSON file and confirm its record and timing appear in the options page after reopening. Bind a file and confirm browser records and existing file history remain available; revoke permission and confirm completion still works.
 10. Confirm a due reminder shows one Chrome notification when Chrome is running.
 11. Open the options page and confirm text search, edit, delete, floating ball theme color and size, color presets, scheduled tasks, and weekly summary.

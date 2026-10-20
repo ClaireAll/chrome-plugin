@@ -581,6 +581,11 @@ input::placeholder {
   font-weight: 800;
 }
 
+.control-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .ball-settings-section .section-heading {
   margin-bottom: 18px;
 }
@@ -1083,96 +1088,9 @@ input::placeholder {
 }
 
 @media (min-width: 1181px) {
-  html,
-  body {
-    height: 100%;
-    overflow: hidden;
-  }
-
-  .todo-options-shell {
-    --todo-dashboard-gap: clamp(14px, 1.8vh, 22px);
-    --todo-bottom-card-height: clamp(208px, 23vh, 268px);
-    height: 100vh;
-    padding: clamp(18px, 2.2vh, 26px) 0 clamp(10px, 1.4vh, 16px);
-    overflow: hidden;
-  }
-
-  .todo-options-dashboard {
-    height: 100%;
-    align-items: stretch;
-  }
-
-  .todo-options-content {
-    grid-template-rows: auto auto minmax(0, 1fr);
-    gap: var(--todo-dashboard-gap);
-    min-height: 0;
-  }
-
-  .todo-options-main {
-    grid-template-rows: minmax(0, 1fr) var(--todo-bottom-card-height);
-    gap: var(--todo-dashboard-gap);
-    min-height: 0;
-  }
-
-  .todo-options-lower {
-    min-height: 0;
-  }
-
-  .todo-options-rail {
-    grid-template-rows: auto auto minmax(0, 1fr) var(--todo-bottom-card-height);
-    gap: var(--todo-dashboard-gap);
-    min-height: 0;
-  }
-
   .todo-stat-card {
     min-height: 108px;
     padding: 16px;
-  }
-
-  .todo-options-primary,
-  .scheduled-section,
-  .todo-options-summary,
-  .todo-rail-theme-preview {
-    min-height: 0;
-  }
-
-  .completed-list {
-    max-height: none;
-    min-height: 0;
-  }
-
-  .scheduled-section {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .scheduled-task-form {
-    flex: 0 0 auto;
-  }
-
-  .scheduled-task-list {
-    min-height: 0;
-    overflow-y: auto;
-  }
-
-  .todo-options-summary,
-  .todo-rail-theme-preview {
-    height: 100%;
-  }
-
-  #weeklyChart {
-    height: calc(100% - 68px) !important;
-    min-height: 0;
-  }
-
-  .todo-rail-theme-preview {
-    overflow: hidden;
-  }
-
-  .color-preset-list {
-    min-height: 0;
-    overflow-y: auto;
   }
 }
 

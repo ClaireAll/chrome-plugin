@@ -11,9 +11,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   try { url = new URL(sender.url || "https://invalid.local"); }
   catch { return; }
   const action = message.action;
-  const supportedOrigin = url.origin === "http://localhost:10001" ||
-    (url.protocol === "https:" && (url.hostname === "jiushuyun.com" || url.hostname.endsWith(".jiushuyun.com")));
-  if (!supportedOrigin ||
+  if (!["http:", "https:"].includes(url.protocol) ||
       !/^\/decision\/home\/project\/[^/]+(?:\/|$)/.test(url.pathname) ||
       !Number.isInteger(action?.key) || action.key < 0 || typeof action.label !== "string" || !action.label.trim() || action.label.length > 120) return;
   // 串行合并多标签页的操作，避免各自读写缓存覆盖另一页的记录。

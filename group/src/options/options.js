@@ -900,23 +900,25 @@ async function handleDrop(event) {
   event.preventDefault?.();
 
   const position = getDropPosition(event, target);
+  const dragInfo = state.dragInfo;
   clearDropIndicator();
-  if (state.dragInfo.kind === "group") {
-    state.data = reorderGroups(state.data, state.dragInfo.groupId, target.dataset.groupId, position);
+  state.dragInfo = null;
+  if (dragInfo.kind === "group") {
+    state.data = reorderGroups(state.data, dragInfo.groupId, target.dataset.groupId, position);
+    render();
     await persistData("分组顺序已更新");
   }
-  if (state.dragInfo.kind === "page") {
+  if (dragInfo.kind === "page") {
     state.data = reorderPages(
       state.data,
-      state.dragInfo.groupId,
-      state.dragInfo.pageId,
+      dragInfo.groupId,
+      dragInfo.pageId,
       target.dataset.pageId,
       position
     );
+    render();
     await persistData("页面顺序已更新");
   }
-
-  state.dragInfo = null;
 }
 
 function handleDragEnd() {

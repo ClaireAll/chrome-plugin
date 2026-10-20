@@ -133,12 +133,13 @@ export async function appendCompletedRecordToFile(recordOrText, completedAt, dur
   return mutateCompletedData((data) => appendCompletedRecord(data, recordOrText, completedAt, durationMs));
 }
 
+// 在同一文件锁内完成读写，允许变更逻辑先异步保存浏览器副本。
 export async function mutateCompletedData(mutator) {
   return withCompletedFileLock(async () => {
     const handle = await getCompletedFileHandle();
     const result = await readCompletedDataForHandle(handle);
     if (!result.ok) return result;
-    return writeCompletedDataForHandle(handle, mutator(result.data));
+    return writeCompletedDataForHandle(handle, await mutator(result.data));
   });
 }
 

@@ -25,6 +25,25 @@
   const TOAST_MAX_WIDTH = 300;
   const TOAST_FALLBACK_HEIGHT = 44;
   const TOAST_GAP = 8;
+  const COMPLETION_CATS = ["cream-orange", "misty-blue", "peach-calico"];
+  const COMPLETION_PRAISES = [
+    "这件事搞定啦，辛苦你了。",
+    "又拿下一件！击个爪喵！",
+    "这一小步，也很值得开心。",
+    "本喵看见了，刚刚有人很棒！",
+    "完成啦，给自己一点掌声。",
+    "这件事，可以放心划掉啦。",
+    "做到了，给自己一个小小拥抱。",
+    "做完这一件，可以松口气啦。",
+    "这份完成的快乐，慢慢收好。",
+    "这一刻，值得对自己笑一下。",
+    "本喵举爪，给你点个赞！",
+    "好耶，给这次完成盖个爪印。",
+    "猫猫点头：这次干得不错。",
+    "夸夸你，这一件完成得漂亮！",
+    "本喵宣布：现在是夸夸时间！",
+    "来，接住本喵的一个 wink。"
+  ];
   const TIMER_RENDER_INTERVAL_MS = 1000;
   const TIMER_HEARTBEAT_INTERVAL_MS = 5000;
   const TIMER_PROGRESS_CYCLE_MS = 30 * 60 * 1000;
@@ -163,6 +182,10 @@
       </section>
       <div class="todo-toast" role="alert" aria-live="assertive" aria-atomic="true" hidden></div>
     </div>
+    <div class="todo-encouragement" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <div class="todo-encouragement-bubble"></div>
+      <img class="todo-encouragement-cat" width="128" height="128" alt="" />
+    </div>
   `;
   document.documentElement.appendChild(root);
 
@@ -181,6 +204,9 @@
   const createPreview = root.querySelector(".todo-create-preview");
   const list = root.querySelector(".todo-list");
   const toast = root.querySelector(".todo-toast");
+  const encouragement = root.querySelector(".todo-encouragement");
+  const encouragementBubble = root.querySelector(".todo-encouragement-bubble");
+  const encouragementCat = root.querySelector(".todo-encouragement-cat");
   shell.dataset.todoEdge = "right";
 
   ball.addEventListener("click", () => {
@@ -219,8 +245,12 @@
     if (!toast.hidden) positionToast();
   });
   window.addEventListener("pagehide", syncRunningTimerHeartbeat);
+  window.addEventListener("pagehide", hideEncouragement);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") syncRunningTimerHeartbeat();
+    if (document.visibilityState === "hidden") {
+      syncRunningTimerHeartbeat();
+      hideEncouragement();
+    }
   });
   chrome.storage?.onChanged?.addListener((changes, areaName) => {
     if (areaName === "local" && (changes.todoUnfinishedItems || changes.todoSettings)) runSafely(refreshState());
@@ -236,6 +266,7 @@
     state.isOpen = open;
     panel.hidden = !open;
     shell.classList.toggle("todo-open", open);
+    if (!open) hideEncouragement();
     if (open) {
       positionPanel();
       await refreshState();
@@ -501,11 +532,71 @@
   }
 
   async function completeTodo(todoId) {
+    hideEncouragement();
     const response = await sendMessage({
       type: MESSAGE_TYPES.COMPLETE_TODO,
       payload: { id: todoId, completedAt: new Date().toISOString() }
     });
-    applyItemsResponse(response, "Unable to complete todo");
+    if (applyItemsResponse(response, "Unable to complete todo")) showEncouragement();
+  }
+
+  function showEncouragement() {
+    if (!state.isOpen || document.visibilityState === "hidden") return;
+    window.clearTimeout(showEncouragement.timer);
+    const cat = COMPLETION_CATS[Math.floor(Math.random() * COMPLETION_CATS.length)];
+    const praise = COMPLETION_PRAISES[Math.floor(Math.random() * COMPLETION_PRAISES.length)];
+    showEncouragement.sequence = (showEncouragement.sequence || 0) + 1;
+    // A fresh resource URL restarts the GIF even when the same cat is picked again.
+    encouragementCat.src = `${chrome.runtime.getURL(`assets/completion-cats/${cat}.gif`)}?play=${showEncouragement.sequence}`;
+    encouragement.hidden = false;
+    encouragementBubble.textContent = praise;
+    positionEncouragement();
+    showEncouragement.timer = window.setTimeout(hideEncouragement, 3000);
+  }
+
+  function hideEncouragement() {
+    window.clearTimeout(showEncouragement.timer);
+    encouragement.hidden = true;
+    if (encouragementCat.src) encouragementCat.removeAttribute("src");
+    if (panel.style.maxHeight) {
+      panel.style.maxHeight = "";
+      if (state.isOpen) positionPanel();
+    }
+  }
+
+  function positionEncouragement() {
+    if (encouragement.hidden) return;
+    let rect = panel.getBoundingClientRect();
+    const gap = 16;
+    const margin = PANEL_VIEWPORT_MARGIN;
+    const leftSpace = Math.max(0, rect.left - margin - gap);
+    const rightSpace = Math.max(0, window.innerWidth - rect.right - margin - gap);
+    const beside = Math.max(leftSpace, rightSpace) >= 160;
+    const width = Math.max(0, beside
+      ? Math.min(240, Math.max(leftSpace, rightSpace))
+      : Math.min(360, window.innerWidth - margin * 2));
+    encouragement.classList.toggle("todo-encouragement--compact", !beside);
+    encouragement.style.width = `${width}px`;
+    const { height } = encouragement.getBoundingClientRect();
+    let left;
+    let top;
+    if (beside) {
+      left = rightSpace >= width ? rect.right + gap : rect.left - width - gap;
+      top = rect.bottom - height;
+    } else {
+      left = rect.left + (rect.width - width) / 2;
+      const belowSpace = window.innerHeight - margin - rect.bottom - gap;
+      const aboveSpace = rect.top - margin - gap;
+      if (Math.max(belowSpace, aboveSpace) < height) {
+        panel.style.maxHeight = `${Math.max(0, window.innerHeight - margin - rect.top - gap - height)}px`;
+        rect = panel.getBoundingClientRect();
+      }
+      top = rect.bottom + gap + height <= window.innerHeight - margin
+        ? rect.bottom + gap
+        : rect.top - height - gap;
+    }
+    encouragement.style.left = `${clamp(left, margin, Math.max(margin, window.innerWidth - width - margin))}px`;
+    encouragement.style.top = `${clamp(top, margin, Math.max(margin, window.innerHeight - height - margin))}px`;
   }
 
   function openOptionsPage() {
@@ -727,6 +818,7 @@
   }
 
   function positionPanel() {
+    panel.style.maxHeight = "";
     const ballRect = shell.getBoundingClientRect();
     const { width: panelWidth, height: panelHeight } = getEffectivePanelDimensions();
     const maxLeft = Math.max(PANEL_VIEWPORT_MARGIN, window.innerWidth - panelWidth - PANEL_VIEWPORT_MARGIN);
@@ -744,6 +836,7 @@
     panel.style.top = `${top}px`;
     panel.style.right = "auto";
     panel.style.bottom = "auto";
+    positionEncouragement();
   }
 
   function getEffectivePanelDimensions() {

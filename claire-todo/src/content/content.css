@@ -229,6 +229,7 @@
 #todo-extension-root .todo-panel-header {
   box-sizing: border-box;
   display: flex;
+  flex-shrink: 0;
   height: 52px;
   align-items: center;
   justify-content: space-between;
@@ -301,6 +302,7 @@
 #todo-extension-root .todo-create-form {
   box-sizing: border-box;
   display: grid;
+  flex-shrink: 0;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   min-height: 58px;
@@ -765,4 +767,79 @@
 #todo-extension-root .todo-toast-ack:focus-visible {
   outline: 3px solid #0f172a;
   outline-offset: 2px;
+}
+
+#todo-extension-root .todo-encouragement {
+  position: fixed;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 240px;
+  pointer-events: none;
+}
+
+#todo-extension-root .todo-encouragement[hidden] {
+  display: none;
+}
+
+#todo-extension-root .todo-encouragement-bubble {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #d8c9b8;
+  border-radius: 16px;
+  background: #fffaf4;
+  color: var(--todo-ink);
+  font: 500 14px/1.6 Arial, sans-serif;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  box-shadow: 0 4px 12px rgb(24 33 47 / 8%);
+}
+
+#todo-extension-root .todo-encouragement-bubble::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 5px);
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid #d8c9b8;
+  border-bottom: 1px solid #d8c9b8;
+  background: #fffaf4;
+  transform: rotate(45deg);
+}
+
+#todo-extension-root .todo-encouragement-cat {
+  display: block;
+  flex: 0 0 auto;
+  width: 128px;
+  height: 128px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+#todo-extension-root .todo-encouragement--compact {
+  flex-direction: row;
+  gap: 12px;
+}
+
+#todo-extension-root .todo-encouragement--compact .todo-encouragement-cat {
+  width: 80px;
+  height: 80px;
+}
+
+#todo-extension-root .todo-encouragement--compact .todo-encouragement-bubble {
+  min-width: 0;
+}
+
+#todo-extension-root .todo-encouragement--compact .todo-encouragement-bubble::after {
+  left: auto;
+  right: -6px;
+  top: calc(50% - 5px);
+  bottom: auto;
+  border-bottom: 0;
+  border-top: 1px solid #d8c9b8;
 }

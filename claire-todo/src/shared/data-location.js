@@ -6,15 +6,23 @@ import { appendCompletedRecord as appendRecord, deleteCompletedRecord, normalize
 
 const DATA_LOCATION_KEY = "todoCompletedDataLocation";
 const BROWSER_COMPLETED_KEY = "todoCompletedBrowserState";
+const COMPLETED_META_KEY = "todoCompletedFileMeta";
+const COMPLETED_CONFLICT_MESSAGE = "完成记录已在其他页面更新，请刷新后重试。";
 
 // 返回当前文件授权状态，浏览器存储始终可作为默认保存位置。
 export async function getCompletedStatus() {
   if (await isRemoteMode()) return failure("unsupported_remote", "Remote completed data is not supported");
   const status = await getCompletedFileStatus();
-  return { ...status, storage: status.permission === "granted" ? "file" : "browser" };
+  const saved = (await chromeStorageGet(BROWSER_COMPLETED_KEY))[BROWSER_COMPLETED_KEY] || {};
+  const fileKey = JSON.stringify([status.fileName, status.boundAt]);
+  return {
+    ...status,
+    storage: status.permission === "granted" && saved.fileKey === fileKey && saved.storage === "file" ? "file" : "browser",
+    fileSyncError: saved.fileSyncError || ""
+  };
 }
 
-// 读取浏览器完成记录，并在文件可用时合并及同步历史。
+// 读取浏览器完成记录；可选文件同步由后台在事务结束后执行。
 export async function readCompletedData() {
   return mutateCompletedData((data) => data);
 }
@@ -35,48 +43,109 @@ export async function updateCompletedRecord(recordIndex, text) {
 }
 
 // 删除浏览器中对应的完成记录，并尝试同步文件。
-export async function deleteCompletedRecordAt(recordIndex) {
-  return mutateCompletedData((data) => deleteCompletedRecord(data, recordIndex));
+export async function deleteCompletedRecordAt(recordIndex, expectation) {
+  return mutateCompletedData((data) => deleteCompletedRecord(data, recordIndex), { recordIndex, expectation });
 }
 
-// 先持久化到浏览器，再在文件锁内合并历史，避免授权或磁盘错误阻断完成。
-async function mutateCompletedData(mutator) {
+// 控制事务只等待浏览器保存，文件授权、锁和磁盘读写不能占用待办队列。
+async function mutateCompletedData(mutator, selection) {
   if (await isRemoteMode()) return failure("unsupported_remote", "Remote completed data is not supported");
   try {
     const saved = (await chromeStorageGet(BROWSER_COMPLETED_KEY))[BROWSER_COMPLETED_KEY] || {};
-    let state = { ...saved, data: normalizeCompletedData(mutator(normalizeCompletedData(saved.data))) };
-    await chromeStorageSet({ [BROWSER_COMPLETED_KEY]: state });
-
-    let fileKey = "";
-    let fileResult;
-    try {
-      fileResult = await mutateLocalCompletedData(async (fileData) => {
-        const status = await getCompletedFileStatus();
-        fileKey = JSON.stringify([status.fileName, status.boundAt]);
-        const base = state.fileKey === fileKey ? state.fileSnapshot : null;
-        const data = mergeCompletedData(state.data, fileData, base);
-        const mergedState = { ...state, data, fileKey, fileSnapshot: normalizeCompletedData(fileData) };
-        await chromeStorageSet({ [BROWSER_COMPLETED_KEY]: mergedState });
-        state = mergedState;
-        return data;
-      });
-      if (fileResult.ok) {
-        const syncedState = { ...state, fileKey, fileSnapshot: state.data };
-        // 文件已落盘；快照标记失败时保留旧标记，后续合并仍可安全重试。
-        await chromeStorageSet({ [BROWSER_COMPLETED_KEY]: syncedState }).catch(() => {});
-      }
-    } catch {
-      fileResult = failure("file_unavailable", "JSON 文件暂不可用，记录已保存在浏览器中");
+    const currentData = normalizeCompletedData(saved.data);
+    const revision = completedRevision(saved);
+    if (selection && !matchesCompletedSelection(currentData, revision, selection)) {
+      return failure("completed_conflict", COMPLETED_CONFLICT_MESSAGE);
     }
-    return {
-      ok: true,
-      data: state.data,
-      storage: fileResult.ok ? "file" : "browser",
-      ...(fileResult.ok ? { fileName: fileResult.fileName } : { fileSyncError: fileResult.reason })
+    const data = normalizeCompletedData(mutator(currentData));
+    const nextRevision = revision + (completedDataEqual(currentData, data) ? 0 : 1);
+    const state = {
+      ...saved,
+      data,
+      revision: nextRevision,
+      storage: "browser",
+      fileSyncError: ""
     };
+    await chromeStorageSet({ [BROWSER_COMPLETED_KEY]: state });
+    return { ok: true, data: state.data, revision: nextRevision, storage: "browser" };
   } catch {
     return failure("browser_storage_error", "浏览器保存失败，任务已保留，请检查浏览器可用存储空间后重试");
   }
+}
+
+// 文件 IO 在队列外运行；合并和快照更新使用短事务，始终重读最新浏览器数据。
+export async function syncCompletedData(runMutation) {
+  if (await isRemoteMode()) return failure("unsupported_remote", "Remote completed data is not supported");
+  let fileKey = "";
+  let writtenData;
+  let fileResult;
+  try {
+    fileResult = await mutateLocalCompletedData(async (fileData) => {
+      const status = await getCompletedFileStatus();
+      fileKey = JSON.stringify([status.fileName, status.boundAt]);
+      return runMutation(async () => {
+        const saved = (await chromeStorageGet(BROWSER_COMPLETED_KEY))[BROWSER_COMPLETED_KEY] || {};
+        // 上次 close 已成功但后台在标记前退出时，用写入意图确认真实基线。
+        const pending = saved.pendingFileWrite;
+        const recoveredWrite = pending?.fileKey === fileKey
+          && JSON.stringify(normalizeCompletedData(pending.data)) === JSON.stringify(normalizeCompletedData(fileData));
+        const base = recoveredWrite ? pending.data : saved.fileKey === fileKey ? saved.fileSnapshot : null;
+        writtenData = mergeCompletedData(saved.data, fileData, base);
+        await chromeStorageSet({
+          [BROWSER_COMPLETED_KEY]: {
+            ...saved,
+            data: writtenData,
+            revision: completedRevision(saved) + (completedDataEqual(saved.data, writtenData) ? 0 : 1),
+            fileKey,
+            fileSnapshot: normalizeCompletedData(fileData),
+            pendingFileWrite: { fileKey, data: writtenData }
+          }
+        });
+        return writtenData;
+      });
+    });
+  } catch {
+    fileResult = failure("file_unavailable", "JSON 文件暂不可用，记录已保存在浏览器中");
+  }
+
+  await runMutation(async () => {
+    const values = await chromeStorageGet([BROWSER_COMPLETED_KEY, COMPLETED_META_KEY]);
+    const saved = values[BROWSER_COMPLETED_KEY] || {};
+    if (!saved.data) return;
+    const meta = values[COMPLETED_META_KEY] || {};
+    // 用户可能已经绑定另一个文件，旧同步不得更新新文件的状态或快照。
+    if (fileKey && JSON.stringify([meta.fileName, meta.boundAt]) !== fileKey) return;
+    const synced = fileResult.ok
+      && JSON.stringify(normalizeCompletedData(saved.data)) === JSON.stringify(normalizeCompletedData(writtenData));
+    if (fileResult.ok) delete saved.pendingFileWrite;
+    await chromeStorageSet({
+      [BROWSER_COMPLETED_KEY]: {
+        ...saved,
+        revision: completedRevision(saved),
+        ...(fileResult.ok ? { fileKey, fileSnapshot: writtenData, fileName: fileResult.fileName } : {}),
+        storage: synced ? "file" : "browser",
+        fileSyncError: fileResult.ok ? "" : fileResult.reason
+      }
+    });
+  });
+  return fileResult;
+}
+
+function completedRevision(saved) {
+  return Number.isSafeInteger(saved.revision) && saved.revision >= 0 ? saved.revision : 0;
+}
+
+function completedDataEqual(left, right) {
+  return JSON.stringify(normalizeCompletedData(left)) === JSON.stringify(normalizeCompletedData(right));
+}
+
+function matchesCompletedSelection(data, revision, { recordIndex, expectation }) {
+  const expectedRecord = expectation?.expectedRecord;
+  if (!Number.isInteger(recordIndex) || recordIndex < 0 || !data.completed[recordIndex]
+    || !Number.isSafeInteger(expectation?.expectedRevision) || expectation.expectedRevision !== revision
+    || !expectedRecord || typeof expectedRecord !== "object" || !expectedRecord.completedAt) return false;
+  const expected = normalizeCompletedData({ completed: [expectedRecord] }).completed[0];
+  return Boolean(expected) && JSON.stringify(data.completed[recordIndex]) === JSON.stringify(expected);
 }
 
 // 按记录出现次数合并两份历史；保留同名同时间的多条任务，并尊重离线删除。

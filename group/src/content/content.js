@@ -592,15 +592,15 @@
     event.preventDefault?.();
 
     const position = getDropPosition(event, target);
+    const dragInfo = state.dragInfo;
     clearDropIndicator();
-    if (state.dragInfo.kind === "group") {
-      await reorderGroups(state.dragInfo.groupId, target.dataset.groupId, position);
-    }
-    if (state.dragInfo.kind === "page") {
-      await reorderPages(state.dragInfo.groupId, state.dragInfo.pageId, target.dataset.pageId, position);
-    }
-
     state.dragInfo = null;
+    if (dragInfo.kind === "group") {
+      await reorderGroups(dragInfo.groupId, target.dataset.groupId, position);
+    }
+    if (dragInfo.kind === "page") {
+      await reorderPages(dragInfo.groupId, dragInfo.pageId, target.dataset.pageId, position);
+    }
   }
 
   function handleTreeDragEnd() {
@@ -715,6 +715,17 @@
   }
 
   async function reorderPages(groupId, sourcePageId, targetPageId, position) {
+    const previousData = state.data;
+    const group = state.data.groups.find((item) => item.id === groupId);
+    if (!group || sourcePageId === targetPageId) return;
+    const pages = [...group.pages];
+    const sourceIndex = pages.findIndex((page) => page.id === sourcePageId);
+    if (sourceIndex < 0 || !pages.some((page) => page.id === targetPageId)) return;
+    const [page] = pages.splice(sourceIndex, 1);
+    const targetIndex = pages.findIndex((item) => item.id === targetPageId);
+    pages.splice(targetIndex + (position === "after" ? 1 : 0), 0, page);
+    state.data = { ...state.data, groups: state.data.groups.map((item) => item.id === groupId ? { ...item, pages } : item) };
+    renderTree();
     const response = await sendMessage({
       type: MESSAGE_TYPES.REORDER_PAGES,
       payload: { groupId, sourcePageId, targetPageId, position }
@@ -722,6 +733,9 @@
     if (response?.ok) {
       state.data = response.data || state.data;
       renderQuickAccess();
+      renderTree();
+    } else {
+      state.data = previousData;
       renderTree();
     }
     showToast(response?.ok ? "页面顺序已更新" : response?.message || "排序失败");
@@ -954,26 +968,15 @@
           groupName: group.name,
           groupIcon: group.icon,
           groupColor: group.color,
-          openCount: normalizeOpenCount(page.openCount),
           quickAccessPinned: page.quickAccessPinned === true
         }))
       )
       .filter((page) => page.quickAccessPinned)
-      .sort((left, right) => {
-        if (left.openCount !== right.openCount) return right.openCount - left.openCount;
-        return String(right.lastOpenedAt || "").localeCompare(String(left.lastOpenedAt || ""));
-      })
       .slice(0, Math.max(0, Number(limit) || 0));
   }
 
   function getPageDisplayName(page) {
     return page?.name || page?.title || page?.url || "";
-  }
-
-  function normalizeOpenCount(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return 0;
-    return Math.max(0, Math.floor(number));
   }
 
   function getGroupIcon(group) {

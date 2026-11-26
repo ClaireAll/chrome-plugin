@@ -27,8 +27,7 @@
   --todo-ball-opacity: 0.98;
   position: fixed;
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  top: calc(50% - var(--todo-ball-size) / 2);
 }
 
 #todo-extension-root .todo-ball {

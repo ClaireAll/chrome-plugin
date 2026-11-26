@@ -257,13 +257,8 @@ body {
 
 .todo-theme-preview {
   display: flex;
-  min-height: 380px;
   padding: 24px;
   flex-direction: column;
-}
-
-.todo-rail-theme-preview {
-  min-height: 380px;
 }
 
 .todo-theme-preview .section-heading {
@@ -851,7 +846,7 @@ input::placeholder {
   flex-wrap: wrap;
   gap: 22px 24px;
   align-items: center;
-  margin-top: auto;
+  margin-top: 0;
   padding-top: 12px;
   padding-bottom: 4px;
 }
@@ -881,22 +876,6 @@ input::placeholder {
 
 .color-preset-item.is-selected .color-swatch {
   border-color: #D4E0EE;
-}
-
-.color-preset-item.is-selected::after {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  border-radius: 999px;
-  color: #FFFFFF;
-  content: "✓";
-  font-size: 22px;
-  font-weight: 900;
-  pointer-events: none;
-  text-shadow: 0 1px 4px rgb(15 23 42 / 30%);
 }
 
 .color-swatch:focus-visible {
@@ -1085,6 +1064,184 @@ input::placeholder {
   place-items: center;
   color: #52617A;
   font-size: 14px;
+}
+
+.completion-cat-heading,
+.completion-cat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.completion-cat-status {
+  flex: 0 0 auto;
+  color: #52617A;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.completion-cat-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.completion-cat-item {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #9EBBF0;
+  border-radius: 8px;
+  background: #F5F9FF;
+}
+
+.completion-cat-choice {
+  display: block;
+  cursor: pointer;
+}
+
+.completion-cat-checkbox {
+  position: absolute;
+  top: 11px;
+  left: 11px;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--todo-blue);
+  cursor: pointer;
+}
+
+.completion-cat-preview {
+  display: block;
+  width: 100%;
+  height: 160px;
+  padding: 12px 18px 0;
+  object-fit: contain;
+}
+
+.completion-cat-name {
+  display: block;
+  margin: 10px 12px 0;
+  overflow-wrap: anywhere;
+  color: #18243A;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.completion-cat-meta {
+  display: block;
+  margin: 5px 12px 12px;
+  color: #52617A;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.completion-cat-delete {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: grid;
+  min-width: 44px;
+  min-height: 30px;
+  padding: 5px 8px;
+  place-items: center;
+  white-space: nowrap;
+  background: #FFFFFF;
+  color: #52617A;
+  font-size: 12px;
+}
+
+.completion-cat-delete:hover,
+.completion-cat-delete:focus-visible {
+  border-color: #FCA5A5;
+  background: #FEF2F2;
+  color: #B91C1C;
+}
+
+.completion-cat-delete svg {
+  width: 16px;
+  height: 16px;
+}
+
+.completion-cat-item.is-unselected {
+  border-color: var(--todo-border);
+  background: #FBFDFF;
+}
+
+.completion-cat-item.is-unselected .completion-cat-preview {
+  opacity: 0.6;
+}
+
+.completion-cat-toolbar {
+  margin-top: 18px;
+}
+
+.completion-cat-upload {
+  min-height: 38px;
+  padding: 8px 16px;
+  border-style: dashed;
+  border-color: #A9C1E8;
+  background: #F8FBFF;
+  color: var(--todo-blue);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.completion-cat-count {
+  color: #52617A;
+  font-size: 12px;
+}
+
+.completion-cat-error,
+.settings-error {
+  margin-top: 12px !important;
+  overflow-wrap: anywhere;
+  color: #B91C1C;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.completion-cat-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-top: 14px;
+  padding: 11px 12px;
+  border-radius: 6px;
+  background: #F4F8FC;
+  color: #52617A;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+  .completion-cat-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .completion-cat-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .completion-cat-list {
+    gap: 10px;
+  }
+
+  .completion-cat-preview {
+    height: 140px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
 }
 
 @media (min-width: 1181px) {

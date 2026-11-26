@@ -139,6 +139,8 @@
     ballDrag: null,
     ballDragMoved: false,
     ballPosition: null,
+    refreshSequence: 0,
+    stateVersion: 0,
     timerRenderInterval: 0,
     timerHeartbeatInterval: 0
   };
@@ -209,6 +211,12 @@
   const encouragementCat = root.querySelector(".todo-encouragement-cat");
   shell.dataset.todoEdge = "right";
 
+  encouragementCat.addEventListener("error", () => {
+    if (encouragement.hidden) return;
+    hideEncouragement();
+    showToast("小猫图片无法显示，请在控制页面重新选择素材。");
+  });
+
   ball.addEventListener("click", () => {
     if (state.ballDragMoved) {
       state.ballDragMoved = false;
@@ -253,7 +261,14 @@
     }
   });
   chrome.storage?.onChanged?.addListener((changes, areaName) => {
-    if (areaName === "local" && (changes.todoUnfinishedItems || changes.todoSettings)) runSafely(refreshState());
+    if (areaName !== "local" || (!changes.todoUnfinishedItems && !changes.todoSettings)) return;
+    state.stateVersion += 1;
+    const settings = changes.todoSettings?.newValue;
+    if (settings && Number(settings.completionCatsRevision || 0) >= Number(state.settings.completionCatsRevision || 0)) {
+      state.settings = { ...state.settings, ...settings };
+      applyBallSettings();
+    }
+    runSafely(refreshState());
   });
   chrome.runtime?.onMessage?.addListener((message) => {
     if (message?.type === MESSAGE_TYPES.REMINDER_DUE) showReminderToast(message.payload);
@@ -275,17 +290,17 @@
   }
 
   async function refreshState() {
+    const sequence = ++state.refreshSequence;
+    const stateVersion = state.stateVersion;
     const response = await sendMessage({ type: MESSAGE_TYPES.GET_STATE });
+    if (sequence !== state.refreshSequence || stateVersion !== state.stateVersion) return;
     if (!response?.ok) {
       showToast(response?.message || "Unable to load todos");
       return;
     }
     state.items = reconcilePendingReorders(Array.isArray(response.items) ? response.items : []);
     state.settings = response.settings || state.settings;
-    applyBallThemeColor(state.settings.ballThemeColor);
-    applyBallSize(state.settings.ballSize);
-    const correctedPosition = applyBallPosition(state.settings.ballPosition);
-    if (correctedPosition?.corrected) persistBallPosition(correctedPosition.position);
+    applyBallSettings();
     render();
     syncTimerLoops();
   }
@@ -306,7 +321,10 @@
       list.innerHTML = `<div class="todo-empty">No unfinished todos</div>`;
       return;
     }
-    list.innerHTML = state.items.map((item) => {
+    const editing = document.activeElement?.closest?.(".todo-text");
+    const editingRow = editing && list.contains(editing) ? editing.closest(".todo-item") : null;
+    const scrollTop = list.scrollTop;
+    const markup = state.items.map((item) => {
       const colorPalette = state.activeColorId === item.id ? renderColorPalette(item) : "";
       const reminder = state.activeReminderId === item.id ? renderReminderPopover(item) : "";
       const todoMeta = renderTodoMeta(item);
@@ -346,6 +364,34 @@
         </article>
       `;
     }).join("");
+    if (!editingRow || !state.items.some((item) => item.id === editing.dataset.todoId)) {
+      list.innerHTML = markup;
+      return;
+    }
+
+    // Keep the focused editor attached so heartbeat updates preserve its caret and IME session.
+    const template = document.createElement("template");
+    template.innerHTML = markup;
+    const rows = [...template.content.children];
+    const updatedRow = rows.find((row) => row.dataset.todoId === editing.dataset.todoId);
+    editingRow.className = updatedRow.className;
+    editingRow.style.cssText = updatedRow.style.cssText;
+    editingRow.dataset.timerState = updatedRow.dataset.timerState;
+    editingRow.querySelector(".todo-item-footer").replaceWith(updatedRow.querySelector(".todo-item-footer"));
+    for (const popover of editingRow.querySelectorAll(":scope > .todo-color-palette, :scope > .todo-reminder-popover")) popover.remove();
+    for (const popover of updatedRow.querySelectorAll(":scope > .todo-color-palette, :scope > .todo-reminder-popover")) editingRow.append(popover);
+    for (const child of [...list.children]) if (child !== editingRow) child.remove();
+    let beforeEditor = true;
+    for (const row of rows) {
+      if (row === updatedRow) {
+        beforeEditor = false;
+      } else if (beforeEditor) {
+        list.insertBefore(row, editingRow);
+      } else {
+        list.append(row);
+      }
+    }
+    list.scrollTop = scrollTop;
   }
 
   // 渲染任务第一行标题，有链接时生成新标签页打开的标题链接。
@@ -542,12 +588,29 @@
 
   function showEncouragement() {
     if (!state.isOpen || document.visibilityState === "hidden") return;
-    window.clearTimeout(showEncouragement.timer);
-    const cat = COMPLETION_CATS[Math.floor(Math.random() * COMPLETION_CATS.length)];
+    hideEncouragement();
+    const cats = (Array.isArray(state.settings.completionCats)
+      ? state.settings.completionCats
+      : COMPLETION_CATS.map((id) => ({ id, builtin: true, enabled: true })))
+      .filter((cat) => cat.enabled);
+    if (!cats.length) return;
+    const cat = cats[Math.floor(Math.random() * cats.length)];
     const praise = COMPLETION_PRAISES[Math.floor(Math.random() * COMPLETION_PRAISES.length)];
     showEncouragement.sequence = (showEncouragement.sequence || 0) + 1;
-    // A fresh resource URL restarts the GIF even when the same cat is picked again.
-    encouragementCat.src = `${chrome.runtime.getURL(`assets/completion-cats/${cat}.gif`)}?play=${showEncouragement.sequence}`;
+    if (cat.builtin) {
+      encouragementCat.src = `${chrome.runtime.getURL(`assets/completion-cats/${cat.id}.gif`)}?play=${showEncouragement.sequence}`;
+    } else {
+      try {
+        const bytes = Uint8Array.from(atob(cat.dataUrl.split(",")[1]), (char) => char.charCodeAt(0));
+        // A unique object URL restarts uploaded GIFs without changing their original frames.
+        showEncouragement.objectUrl = URL.createObjectURL(new Blob([bytes], { type: cat.type }));
+        encouragementCat.src = showEncouragement.objectUrl;
+      } catch {
+        hideEncouragement();
+        showToast("小猫图片无法读取，请在控制页面重新上传。");
+        return;
+      }
+    }
     encouragement.hidden = false;
     encouragementBubble.textContent = praise;
     positionEncouragement();
@@ -558,6 +621,10 @@
     window.clearTimeout(showEncouragement.timer);
     encouragement.hidden = true;
     if (encouragementCat.src) encouragementCat.removeAttribute("src");
+    if (showEncouragement.objectUrl) {
+      URL.revokeObjectURL(showEncouragement.objectUrl);
+      showEncouragement.objectUrl = "";
+    }
     if (panel.style.maxHeight) {
       panel.style.maxHeight = "";
       if (state.isOpen) positionPanel();
@@ -615,8 +682,11 @@
       showToast(response?.message || fallbackMessage);
       return false;
     }
-    state.items = response.items;
+    state.stateVersion += 1;
+    state.items = reconcilePendingReorders(response.items);
     render();
+    syncTimerLoops();
+    runSafely(refreshState());
     return true;
   }
 
@@ -667,7 +737,7 @@
 
   function handleListKeydown(event) {
     const text = event.target.closest?.(".todo-text");
-    if (text && event.key === "Enter") {
+    if (text && event.key === "Enter" && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       text.blur();
     }
@@ -752,6 +822,13 @@
     root.style.setProperty("--todo-ball-theme", normalizeHexColor(color) || "#2563eb");
   }
 
+  function applyBallSettings() {
+    applyBallThemeColor(state.settings.ballThemeColor);
+    applyBallSize(state.settings.ballSize);
+    const correctedPosition = applyBallPosition(state.settings.ballPosition);
+    if (correctedPosition?.corrected) persistBallPosition(correctedPosition.position);
+  }
+
   // 应用设置页保存的悬浮球尺寸。
   function applyBallSize(size) {
     shell.style.setProperty("--todo-ball-size", `${normalizeBallSize(size)}px`);
@@ -766,9 +843,11 @@
         await refreshState();
         return;
       }
+      state.stateVersion += 1;
       state.items = response.items;
     }
     render();
+    if (operations.length) runSafely(refreshState());
   }
 
   function startBallDrag(event) {
@@ -999,9 +1078,10 @@
     }));
   }
 
-  // 获取当前由悬浮球控制的计时任务。
+  // 获取悬浮球展示的计时任务，优先选择仍在运行的任务。
   function getFocusedTimerItem() {
-    return getActiveTimerItems()[0] || null;
+    const activeTimers = getActiveTimerItems();
+    return activeTimers.find((item) => getTimerState(item) === "running") || activeTimers[0] || null;
   }
 
   // 获取所有已开始计时的任务，并按首次开始时间排序供浮球展示。

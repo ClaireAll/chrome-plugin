@@ -17,11 +17,16 @@ import * as completedDataLocation from "../shared/data-location.js";
 import { failure, MESSAGE_TYPES, success } from "../shared/messages.js";
 import { alarmNameForTodo, isReminderOnTime, todoIdFromAlarmName } from "../shared/reminder-schedule.js";
 import { loadTodoItems, loadTodoState, saveSettings, saveTodoItems } from "../shared/storage.js";
+import { SETTINGS_CONFLICT_MESSAGE } from "../shared/settings.js";
 
 const RECURRING_ALARM_PREFIX = "todo-recurring:";
 
 let completedStoreOverride = null;
 let mutationQueue = Promise.resolve();
+let settingsQueue = Promise.resolve();
+let completedSync = null;
+let completedSyncRequested = false;
+let completedSyncInitialized = false;
 
 if (globalThis.chrome?.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -60,7 +65,15 @@ export function __setCompletedStoreForTest(store) {
 }
 
 export async function handleMessage(message = {}, sender) {
-  if (isMutationMessage(message.type)) return enqueueMutation(() => handleMessageNow(message, sender));
+  // Local cat settings must not wait for optional completed-file synchronization.
+  if (isCompletionCatSettingsMessage(message)) return handleMessageNow(message, sender);
+  if (isMutationMessage(message.type)) {
+    const result = enqueueMutation(() => handleMessageNow(message, sender));
+    if (isCompletedDataMessage(message.type)) result.then((response) => {
+      if (response?.ok) requestCompletedSync();
+    }, () => {});
+    return result;
+  }
   return handleMessageNow(message, sender);
 }
 
@@ -69,6 +82,7 @@ async function handleMessageNow(message = {}, sender) {
 
   switch (message.type) {
     case MESSAGE_TYPES.GET_STATE: {
+      if (!completedSyncInitialized) requestCompletedSync();
       const state = await loadTodoState();
       return success({ ...state, completedStatus: await completedStore().getCompletedStatus() });
     }
@@ -108,7 +122,10 @@ async function handleMessageNow(message = {}, sender) {
     case MESSAGE_TYPES.UPDATE_COMPLETED_RECORD:
       return completedStore().updateCompletedRecord(payload.recordIndex, payload.text);
     case MESSAGE_TYPES.DELETE_COMPLETED_RECORD:
-      return completedStore().deleteCompletedRecordAt(payload.recordIndex);
+      return completedStore().deleteCompletedRecordAt(payload.recordIndex, {
+        expectedRevision: payload.expectedRevision,
+        expectedRecord: payload.expectedRecord
+      });
     default:
       return failure("unknown_message", "Unsupported todo message");
   }
@@ -138,7 +155,7 @@ async function handleAlarmNow(alarm, handledAt) {
   await notifyOpenPages(item);
   await chrome.notifications.create(alarm.name, {
     type: "basic",
-    iconUrl: "icons/icon-128.png",
+    iconUrl: chrome.runtime.getURL("icons/icon-128.png"),
     title: "Todo reminder",
     message: item.text
   });
@@ -174,9 +191,16 @@ async function saveItems(items) {
 }
 
 async function updateSettings(payload) {
-  const settings = await saveSettings(payload);
-  if (Object.hasOwn(payload || {}, "recurringTasks")) await syncRecurringTaskAlarms(settings.recurringTasks);
-  return success({ settings });
+  return enqueueSettings(async () => {
+    // Array replacements from a page need its original value; internal alarm writes stay serialized above.
+    if (["colorPresets", "recurringTasks"].some((key) => Object.hasOwn(payload || {}, key)
+      && !Object.hasOwn(payload.expectedSettings || {}, key))) {
+      return failure("settings_conflict", SETTINGS_CONFLICT_MESSAGE);
+    }
+    const settings = await saveSettings(payload);
+    if (Object.hasOwn(payload || {}, "recurringTasks")) await syncRecurringTaskAlarms(settings.recurringTasks);
+    return success({ settings });
+  });
 }
 
 async function updateReminder(payload) {
@@ -256,7 +280,7 @@ async function handleRecurringTaskAlarm(taskId, alarm, handledAt) {
     await saveTodoItems(addTodoItem(state.items, task.text, state.settings, handledAt));
   }
 
-  const settings = await saveSettings({ recurringTasks: nextRecurringTasks });
+  const settings = await enqueueSettings(() => saveSettings({ recurringTasks: nextRecurringTasks }));
   const nextTask = (settings.recurringTasks || []).find((item) => item.id === task.id);
   if (nextTask) await scheduleRecurringTask(nextTask, new Date(occurrenceTime.getTime() + 1000));
 }
@@ -391,6 +415,50 @@ function enqueueMutation(operation) {
   const task = mutationQueue.then(operation, operation);
   mutationQueue = task.catch(() => {});
   return task;
+}
+
+function enqueueSettings(operation) {
+  const task = settingsQueue.then(operation, operation);
+  settingsQueue = task.catch(() => {});
+  return task;
+}
+
+function requestCompletedSync() {
+  if (completedStoreOverride) return;
+  completedSyncInitialized = true;
+  completedSyncRequested = true;
+  if (completedSync) return;
+  completedSync = (async () => {
+    do {
+      completedSyncRequested = false;
+      const result = await completedDataLocation.syncCompletedData(enqueueMutation);
+      if (!result.ok) {
+        completedSyncRequested = false;
+        break;
+      }
+    } while (completedSyncRequested);
+  })().catch(() => { completedSyncRequested = false; }).finally(() => {
+    completedSync = null;
+    if (completedSyncRequested) requestCompletedSync();
+  });
+}
+
+function isCompletedDataMessage(type) {
+  return [
+    MESSAGE_TYPES.COMPLETE_TODO,
+    MESSAGE_TYPES.READ_COMPLETED_DATA,
+    MESSAGE_TYPES.WRITE_COMPLETED_DATA,
+    MESSAGE_TYPES.UPDATE_COMPLETED_RECORD,
+    MESSAGE_TYPES.DELETE_COMPLETED_RECORD
+  ].includes(type);
+}
+
+function isCompletionCatSettingsMessage(message) {
+  const payload = message.payload;
+  return message.type === MESSAGE_TYPES.UPDATE_SETTINGS
+    && payload && typeof payload === "object"
+    && Object.hasOwn(payload, "completionCats")
+    && Object.keys(payload).every((key) => key === "completionCats" || key === "completionCatsRevision");
 }
 
 function isMutationMessage(type) {

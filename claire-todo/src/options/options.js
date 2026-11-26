@@ -1,11 +1,14 @@
 import { buildEChartsHeatmapOption, buildWeeklySummary, getWeekRange } from "../shared/weekly-summary.js";
 import { MESSAGE_TYPES } from "../shared/messages.js";
+import { normalizeCompletedData } from "../shared/domain.js";
 import {
   createCompletedJsonFile,
   pickCompletedJsonFile,
   requestCompletedFilePermission
 } from "../shared/completed-file-store.js";
-import { BALL_SIZE_DEFAULT, BALL_SIZE_MAX, BALL_SIZE_MIN } from "../shared/settings.js";
+import {
+  BALL_SIZE_DEFAULT, BALL_SIZE_MAX, BALL_SIZE_MIN, COMPLETION_CATS_CONFLICT_MESSAGE, SETTINGS_CONFLICT_MESSAGE, sanitizeCompletionCats, sanitizeSettings
+} from "../shared/settings.js";
 
 const elements = {
   addColorPreset: document.getElementById("addColorPreset"),
@@ -15,16 +18,26 @@ const elements = {
   ballSizeValue: document.getElementById("ballSizeValue"),
   ballThemeColor: document.getElementById("ballThemeColor"),
   colorPresetList: document.getElementById("colorPresetList"),
+  colorPresetError: document.getElementById("colorPresetError"),
   completedFileName: document.getElementById("completedFileName"),
   completedFileStatus: document.getElementById("completedFileStatus"),
   completedList: document.getElementById("completedList"),
+  completedOperationError: document.getElementById("completedOperationError"),
   completedPermissionBadge: document.getElementById("completedPermissionBadge"),
   completedSearch: document.getElementById("completedSearch"),
+  completionCatSection: document.getElementById("completionCatSection"),
+  completionCatList: document.getElementById("completionCatList"),
+  completionCatFiles: document.getElementById("completionCatFiles"),
+  completionCatCount: document.getElementById("completionCatCount"),
+  completionCatStatus: document.getElementById("completionCatStatus"),
+  completionCatError: document.getElementById("completionCatError"),
+  uploadCompletionCats: document.getElementById("uploadCompletionCats"),
   createCompletedFile: document.getElementById("createCompletedFile"),
   pickCompletedFile: document.getElementById("pickCompletedFile"),
   requestCompletedPermission: document.getElementById("requestCompletedPermission"),
   scheduledFrequencyButtons: document.querySelectorAll("[data-frequency]"),
   scheduledTaskForm: document.getElementById("scheduledTaskForm"),
+  scheduledTaskError: document.getElementById("scheduledTaskError"),
   scheduledTaskFrequency: document.getElementById("scheduledTaskFrequency"),
   scheduledTaskList: document.getElementById("scheduledTaskList"),
   scheduledTaskMonthday: document.getElementById("scheduledTaskMonthday"),
@@ -44,10 +57,22 @@ const elements = {
 };
 
 const WEEKDAY_LABELS = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const COMPLETION_CATS_RELOAD_MESSAGE = "小猫设置后台版本较旧，请在 chrome://extensions 中重新加载 claire-todo，再刷新此页面。";
 
 let completedData = { completed: [] };
+let completedDataRevision = 0;
 let completedStatus = null;
 let completedMutationBusy = false;
+let completedCacheError = "";
+let completedCacheVersion = 0;
+let completionCats = sanitizeCompletionCats();
+let completionCatsRevision = 0;
+let completionCatsReady = false;
+let completionCatsBackendCompatible = false;
+let completionCatsBusy = false;
+let completionCatsStatusText = "加载中…";
+let completionCatFocus = null;
+let settingsCacheVersion = 0;
 let settings = { ballSize: BALL_SIZE_DEFAULT, ballThemeColor: "#2563eb", colorPresets: [], recurringTasks: [] };
 let chart = null;
 let weeklyChartFrame = 0;
@@ -78,7 +103,7 @@ function renderCompletedRecords() {
   if (!records.length) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
-    empty.textContent = "没有匹配的完成记录";
+    empty.textContent = query ? "没有匹配的完成记录" : "暂无完成记录";
     elements.completedList.append(empty);
     return;
   }
@@ -105,9 +130,11 @@ function renderCompletedRecords() {
     time.className = "completed-time";
     time.dateTime = record.completedAt;
     time.textContent = formatCompletedTime(record.completedAt);
+    const { recordIndex, ...expectedRecord } = record;
+    const expectedRevision = completedDataRevision;
     const deleteButton = createButton("删除", "icon-button completed-delete-button", async () => {
       await handleCompletedMutation(
-        () => sendMessage(MESSAGE_TYPES.DELETE_COMPLETED_RECORD, { recordIndex: record.recordIndex }),
+        () => sendMessage(MESSAGE_TYPES.DELETE_COMPLETED_RECORD, { recordIndex, expectedRevision, expectedRecord }),
         "完成记录删除失败"
       );
     });
@@ -206,6 +233,269 @@ function renderBallSize(value = settings.ballSize) {
   elements.ballSizePreview.style.setProperty("--preview-ball-size", `${ballSize}px`);
 }
 
+function renderCompletionCats() {
+  const focusedControl = document.activeElement;
+  const focusedId = completionCatFocus?.id || focusedControl?.dataset.completionCatId;
+  const focusedAction = completionCatFocus?.action || focusedControl?.dataset.completionCatAction;
+  const focusUpload = completionCatFocus?.upload;
+  completionCatFocus = null;
+  const cats = sanitizeCompletionCats(completionCats);
+  elements.completionCatList.replaceChildren();
+  for (const cat of cats) {
+    const item = document.createElement("article");
+    item.className = "completion-cat-item";
+    item.classList.toggle("is-unselected", !cat.enabled);
+    const choice = document.createElement("label");
+    choice.className = "completion-cat-choice";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "completion-cat-checkbox";
+    checkbox.checked = cat.enabled;
+    checkbox.dataset.completionCatId = cat.id;
+    checkbox.dataset.completionCatAction = "select";
+    checkbox.setAttribute("aria-label", cat.name + "参与随机展示");
+    checkbox.addEventListener("change", () => {
+      const nextCats = sanitizeCompletionCats(completionCats)
+        .map((entry) => entry.id === cat.id ? { ...entry, enabled: checkbox.checked } : entry);
+      item.classList.toggle("is-unselected", !checkbox.checked);
+      renderCompletionCatCount(nextCats);
+      updateCompletionCats(nextCats);
+    });
+    const preview = document.createElement("img");
+    preview.className = "completion-cat-preview";
+    preview.alt = "";
+    preview.src = cat.builtin
+      ? chrome.runtime.getURL("assets/completion-cats/" + cat.id + ".gif")
+      : cat.dataUrl;
+    const name = document.createElement("span");
+    name.className = "completion-cat-name";
+    name.textContent = cat.name;
+    name.title = cat.name;
+    const meta = document.createElement("span");
+    meta.className = "completion-cat-meta";
+    meta.textContent = (cat.builtin ? "内置 · " : "自定义 · ") + (cat.type === "image/png" ? "PNG" : "GIF");
+    choice.append(checkbox, preview, name, meta);
+    item.append(choice);
+    if (!cat.builtin) {
+      const remove = createButton("删除", "completion-cat-delete", () => {
+        updateCompletionCats(sanitizeCompletionCats(completionCats).filter((entry) => entry.id !== cat.id));
+      });
+      remove.setAttribute("aria-label", "删除自定义素材 " + cat.name);
+      remove.dataset.completionCatId = cat.id;
+      remove.dataset.completionCatAction = "delete";
+      item.append(remove);
+    }
+    elements.completionCatList.append(item);
+  }
+  renderCompletionCatCount(cats);
+  setCompletionCatsBusy(completionCatsBusy);
+  if (focusedId) {
+    const replacement = [...elements.completionCatList.querySelectorAll("[data-completion-cat-id]")]
+      .find((control) => control.dataset.completionCatId === focusedId
+        && control.dataset.completionCatAction === focusedAction);
+    (replacement || elements.uploadCompletionCats).focus();
+  } else if (focusUpload) {
+    elements.uploadCompletionCats.focus();
+  }
+}
+
+function renderCompletionCatCount(cats) {
+  elements.completionCatCount.textContent = "已选 " + cats.filter((cat) => cat.enabled).length + " 张";
+}
+
+function setCompletionCatsBusy(busy, status = completionCatsStatusText) {
+  if (busy && !completionCatsBusy) {
+    const focused = document.activeElement;
+    completionCatFocus = {
+      id: focused?.dataset.completionCatId,
+      action: focused?.dataset.completionCatAction,
+      upload: focused === elements.uploadCompletionCats
+    };
+  }
+  completionCatsBusy = busy;
+  completionCatsStatusText = status;
+  elements.completionCatSection.setAttribute("aria-busy", String(busy));
+  elements.completionCatStatus.textContent = status;
+  elements.uploadCompletionCats.disabled = busy || !completionCatsReady;
+  elements.completionCatFiles.disabled = busy || !completionCatsReady;
+  for (const control of elements.completionCatList.querySelectorAll("input, button")) {
+    control.disabled = busy || !completionCatsReady;
+  }
+}
+
+function showCompletionCatError(message = "") {
+  elements.completionCatError.textContent = message;
+  elements.completionCatError.hidden = !message;
+}
+
+function hasCompletionCatsSettings(value) {
+  return Array.isArray(value?.completionCats)
+    && Number.isSafeInteger(value.completionCatsRevision)
+    && value.completionCatsRevision >= 0;
+}
+
+function requireCompletionCatsReload() {
+  completionCatsBackendCompatible = false;
+  completionCatsReady = false;
+  completionCatsStatusText = "需重新加载插件";
+  showCompletionCatError(COMPLETION_CATS_RELOAD_MESSAGE);
+}
+
+async function saveCompletionCats(nextCats) {
+  const settingsVersion = settingsCacheVersion;
+  const expectedRevision = completionCatsRevision;
+  const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, {
+    completionCats: nextCats,
+    completionCatsRevision: expectedRevision
+  });
+  if (!result?.ok) {
+    const message = result?.message || "无法保存素材设置";
+    if (message === COMPLETION_CATS_CONFLICT_MESSAGE) {
+      const latest = await sendMessage(MESSAGE_TYPES.GET_STATE).catch(() => null);
+      completionCatsReady = Boolean(latest?.ok && hasCompletionCatsSettings(latest.settings));
+      if (latest?.ok) {
+        if (!hasCompletionCatsSettings(latest.settings)) {
+          requireCompletionCatsReload();
+          throw new Error(COMPLETION_CATS_RELOAD_MESSAGE);
+        }
+        completionCatsBackendCompatible = true;
+        const latestSettings = sanitizeSettings(latest.settings);
+        if (latestSettings.completionCatsRevision >= completionCatsRevision) {
+          completionCats = latestSettings.completionCats;
+          completionCatsRevision = latestSettings.completionCatsRevision;
+        }
+      }
+    }
+    throw new Error(message);
+  }
+  if (!hasCompletionCatsSettings(result.settings) || result.settings.completionCatsRevision <= expectedRevision) {
+    requireCompletionCatsReload();
+    throw new Error(COMPLETION_CATS_RELOAD_MESSAGE);
+  }
+  const savedSettings = sanitizeSettings(result.settings);
+  if (savedSettings.completionCatsRevision >= completionCatsRevision) {
+    completionCats = savedSettings.completionCats;
+    completionCatsRevision = savedSettings.completionCatsRevision;
+  }
+  if (settingsVersion === settingsCacheVersion) settings = result.settings;
+}
+
+function completionCatSaveError(error) {
+  const message = error?.message || "请稍后重试";
+  if (message === COMPLETION_CATS_RELOAD_MESSAGE) return message;
+  if (message === COMPLETION_CATS_CONFLICT_MESSAGE) {
+    return message + (completionCatsReady ? "已加载最新配置，请重新操作。" : "请刷新页面后重试。");
+  }
+  if (/quota|QUOTA_BYTES|空间|配额/i.test(message)) {
+    return "浏览器本地存储空间不足，请删除部分自定义素材或选择更小的文件。原有素材和勾选状态已保留。";
+  }
+  return "保存失败：" + message + "。原有素材和勾选状态已保留。";
+}
+
+async function updateCompletionCats(completionCats) {
+  if (completionCatsBusy || !completionCatsReady) return;
+  showCompletionCatError();
+  setCompletionCatsBusy(true, "正在保存…");
+  try {
+    await saveCompletionCats(completionCats);
+    completionCatsStatusText = "已自动保存";
+  } catch (error) {
+    completionCatsStatusText = completionCatsBackendCompatible ? "保存失败" : "需重新加载插件";
+    showCompletionCatError(completionCatSaveError(error));
+  } finally {
+    completionCatsBusy = false;
+    renderCompletionCats();
+  }
+}
+
+async function uploadCompletionCatFiles(files) {
+  if (!files.length || completionCatsBusy || !completionCatsReady) return;
+  showCompletionCatError();
+  setCompletionCatsBusy(true, "正在读取素材…");
+  const addedCats = [];
+  const errors = [];
+  try {
+    for (const file of files) {
+      try {
+        addedCats.push(await readCompletionCatFile(file));
+      } catch (error) {
+        errors.push(file.name + "：" + (error?.message || "无法读取此文件"));
+      }
+    }
+    if (addedCats.length) {
+      setCompletionCatsBusy(true, "正在保存…");
+      await saveCompletionCats([...sanitizeCompletionCats(completionCats), ...addedCats]);
+      completionCatsStatusText = "已自动保存";
+    } else {
+      completionCatsStatusText = "未上传素材";
+    }
+  } catch (error) {
+    completionCatsStatusText = completionCatsBackendCompatible ? "保存失败" : "需重新加载插件";
+    errors.push(completionCatSaveError(error));
+  } finally {
+    elements.completionCatFiles.value = "";
+    completionCatsBusy = false;
+    renderCompletionCats();
+    showCompletionCatError(errors.join("；"));
+  }
+}
+
+async function readCompletionCatFile(file) {
+  const header = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  const isPng = [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => header[index] === byte);
+  const gifHeader = String.fromCharCode(...header.slice(0, 6));
+  const isJpegWithPngName = /\.png$/i.test(file.name) && header[0] === 255 && header[1] === 216 && header[2] === 255;
+  const type = isPng || isJpegWithPngName ? "image/png" : gifHeader === "GIF87a" || gifHeader === "GIF89a" ? "image/gif" : "";
+  if (!type) throw new Error("仅支持有效的 PNG 或 GIF 图片");
+  const quotaBytes = chrome.storage.local.QUOTA_BYTES;
+  if (!isJpegWithPngName && Number.isFinite(quotaBytes) && Math.ceil(file.size / 3) * 4 > quotaBytes) {
+    throw new Error("文件超过浏览器本地存储容量，请选择更小的文件");
+  }
+  const blob = file.slice(0, file.size, isJpegWithPngName ? "image/jpeg" : type);
+  const objectUrl = URL.createObjectURL(blob);
+  let dataUrl;
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => image.naturalWidth > 0 && image.naturalHeight > 0
+        ? resolve(image)
+        : reject(new Error("图片无法解码，请更换文件"));
+      image.onerror = () => reject(new Error("图片无法解码，请更换文件"));
+      image.src = objectUrl;
+    });
+    if (isJpegWithPngName) {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("图片转换失败，请更换文件");
+      context.drawImage(image, 0, 0);
+      dataUrl = canvas.toDataURL("image/png");
+      if (!dataUrl.startsWith("data:image/png;base64,")) throw new Error("图片转换失败，请更换文件");
+    }
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+  dataUrl ||= await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("文件读取失败，请重试"));
+    reader.onabort = () => reject(new Error("文件读取已中断，请重试"));
+    reader.readAsDataURL(blob);
+  });
+  if (Number.isFinite(quotaBytes) && dataUrl.length > quotaBytes) {
+    throw new Error("文件超过浏览器本地存储容量，请选择更小的文件");
+  }
+  return {
+    id: "custom-" + globalThis.crypto.randomUUID(),
+    name: file.name,
+    type,
+    builtin: false,
+    enabled: true,
+    dataUrl
+  };
+}
+
 function renderScheduledTasks() {
   const tasks = settings.recurringTasks || [];
   elements.scheduledTaskList.replaceChildren();
@@ -270,20 +560,50 @@ function scheduledTaskMeta(task) {
   return `每月${task.monthDay}日 ${task.time}`;
 }
 
+function renderSettingsControls(forceField = "") {
+  const active = document.activeElement;
+  if (active !== elements.ballThemeColor) renderBallThemeColor();
+  if (active !== elements.ballSize) renderBallSize();
+  if (forceField === "colorPresets" || !elements.colorPresetList.contains(active)) renderColorPresets();
+  renderScheduledTasks();
+}
+
+async function saveSettingsArray(field, values, errorElement) {
+  const expectedSettings = { [field]: settings[field] || [] };
+  const version = settingsCacheVersion;
+  errorElement.hidden = true;
+  errorElement.textContent = "";
+  try {
+    const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { [field]: values, expectedSettings });
+    if (!result?.ok) throw new Error(result?.message || "无法保存设置");
+    if (version === settingsCacheVersion) settings = sanitizeSettings(result.settings || { ...settings, [field]: values });
+    renderSettingsControls(field);
+    return true;
+  } catch (error) {
+    const refreshVersion = settingsCacheVersion;
+    const latest = await sendMessage(MESSAGE_TYPES.GET_STATE).catch(() => null);
+    if (latest?.ok && refreshVersion === settingsCacheVersion) settings = sanitizeSettings(latest.settings);
+    renderSettingsControls(field);
+    errorElement.textContent = error?.message === SETTINGS_CONFLICT_MESSAGE
+      ? SETTINGS_CONFLICT_MESSAGE + (latest?.ok ? "已加载最新设置，请重新操作。" : "请刷新页面后重试。")
+      : "保存失败：" + (error?.message || "请稍后重试") + "。";
+    errorElement.hidden = false;
+    return false;
+  }
+}
+
 async function updateColorPresets(colorPresets) {
-  const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { colorPresets });
-  if (!result.ok) return;
-  settings = result.settings || { ...settings, colorPresets };
-  renderColorPresets();
+  if (!await saveSettingsArray("colorPresets", colorPresets, elements.colorPresetError)) return;
   renderCompletedRecords();
   renderWeeklySummary();
 }
 
 async function updateBallThemeColor(color) {
   const ballThemeColor = normalizePickerColor(color);
+  const version = settingsCacheVersion;
   const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { ballThemeColor });
   if (!result.ok) return;
-  settings = result.settings || { ...settings, ballThemeColor };
+  if (version === settingsCacheVersion) settings = sanitizeSettings(result.settings || { ...settings, ballThemeColor });
   renderBallThemeColor();
   renderColorPresets();
 }
@@ -291,9 +611,10 @@ async function updateBallThemeColor(color) {
 // 保存悬浮球大小设置。
 async function updateBallSize(value) {
   const ballSize = normalizeBallSize(value);
+  const version = settingsCacheVersion;
   const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { ballSize });
   if (!result.ok) return;
-  settings = result.settings || { ...settings, ballSize };
+  if (version === settingsCacheVersion) settings = sanitizeSettings(result.settings || { ...settings, ballSize });
   renderBallSize();
 }
 
@@ -302,7 +623,12 @@ function applyColorPreset(color, nextColor) {
   if (normalizedColor === color) return;
   const colorPresets = [...(settings.colorPresets || [])];
   const colorIndex = colorPresets.indexOf(color);
-  if (colorIndex < 0) return;
+  if (colorIndex < 0) {
+    elements.colorPresetError.textContent = SETTINGS_CONFLICT_MESSAGE + "请重新选择颜色。";
+    elements.colorPresetError.hidden = false;
+    renderColorPresets();
+    return;
+  }
   colorPresets[colorIndex] = normalizedColor;
   updateColorPresets(colorPresets);
 }
@@ -315,19 +641,13 @@ async function addScheduledTask() {
   if (!elements.scheduledTaskForm.reportValidity()) return;
   const task = createScheduledTask();
   const recurringTasks = [...(settings.recurringTasks || []), task];
-  const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { recurringTasks });
-  if (!result.ok) return;
-  settings = result.settings || { ...settings, recurringTasks };
+  if (!await saveSettingsArray("recurringTasks", recurringTasks, elements.scheduledTaskError)) return;
   resetScheduledTaskForm();
-  renderScheduledTasks();
 }
 
 async function deleteScheduledTask(taskId) {
   const recurringTasks = (settings.recurringTasks || []).filter((task) => task.id !== taskId);
-  const result = await sendMessage(MESSAGE_TYPES.UPDATE_SETTINGS, { recurringTasks });
-  if (!result.ok) return;
-  settings = result.settings || { ...settings, recurringTasks };
-  renderScheduledTasks();
+  await saveSettingsArray("recurringTasks", recurringTasks, elements.scheduledTaskError);
 }
 
 function createScheduledTask() {
@@ -557,21 +877,24 @@ function withCompletedRecordColors(records) {
 }
 
 async function refreshCompletedData(statusOverride = "") {
+  const version = completedCacheVersion;
   const result = await sendMessage(MESSAGE_TYPES.READ_COMPLETED_DATA).catch((error) => ({
     ok: false,
     message: error?.message || "无法读取完成记录文件"
   }));
   if (!result.ok) {
     elements.completedFileStatus.textContent = statusOverride || completedFileErrorText(result.message || "未绑定完成记录文件");
+    if (completedCacheError) elements.completedFileStatus.textContent += " · " + completedCacheError;
   } else {
-    applyCompletedData(result.data);
-    if (result.fileName) completedStatus = { ...completedStatus, fileName: result.fileName };
-    if (result.storage) completedStatus = {
+    completedCacheError = "";
+    if (version === completedCacheVersion) applyCompletedData(result.data, result.revision ?? 0);
+    if (version === completedCacheVersion && result.fileName) completedStatus = { ...completedStatus, fileName: result.fileName };
+    if (version === completedCacheVersion && result.storage) completedStatus = {
       ...completedStatus,
       storage: result.storage,
       fileSyncError: result.fileSyncError || ""
     };
-    updateCompletedFileCard(statusOverride || formatFileUpdatedAt(result.data)
+    updateCompletedFileCard(statusOverride || formatFileUpdatedAt(completedData)
       || (result.storage === "browser" ? "暂无完成记录" : "已读取完成记录文件"));
     return;
   }
@@ -580,8 +903,14 @@ async function refreshCompletedData(statusOverride = "") {
   renderWeeklySummary();
 }
 
+function showCompletedOperationError(message = "") {
+  elements.completedOperationError.textContent = message;
+  elements.completedOperationError.hidden = !message;
+}
+
 async function handleCompletedMutation(operation, fallbackMessage) {
   if (completedMutationBusy) return;
+  showCompletedOperationError();
   completedMutationBusy = true;
   renderCompletedRecords();
   try {
@@ -590,9 +919,11 @@ async function handleCompletedMutation(operation, fallbackMessage) {
       await refreshCompletedData();
       return;
     }
-    await refreshCompletedData(result?.message || fallbackMessage);
+    showCompletedOperationError(result?.message || fallbackMessage);
+    await refreshCompletedData();
   } catch (error) {
-    await refreshCompletedData(error?.message || fallbackMessage);
+    showCompletedOperationError(error?.message || fallbackMessage);
+    await refreshCompletedData();
   } finally {
     completedMutationBusy = false;
     renderCompletedRecords();
@@ -602,7 +933,7 @@ async function handleCompletedMutation(operation, fallbackMessage) {
 async function showCompletedFileResult(result) {
   if (result.ok) {
     applyCompletedStatus(result);
-    if (result.data) applyCompletedData(result.data);
+    if (result.data) applyCompletedData(result.data, result.revision ?? completedDataRevision);
     await refreshCompletedData();
     return;
   }
@@ -616,16 +947,63 @@ async function showCompletedFileResult(result) {
 }
 
 async function refreshState() {
+  applyCompletedData(completedData);
+  const cachedDataReady = refreshCachedCompletedData();
+  const settingsVersion = settingsCacheVersion;
   const state = await sendMessage(MESSAGE_TYPES.GET_STATE).catch(() => ({ ok: false }));
   if (state.ok) {
-    settings = state.settings;
+    if (settingsVersion === settingsCacheVersion) settings = sanitizeSettings(state.settings);
+    if (hasCompletionCatsSettings(state.settings)) {
+      completionCatsBackendCompatible = true;
+      const initialSettings = sanitizeSettings(state.settings);
+      if (initialSettings.completionCatsRevision >= completionCatsRevision) {
+        completionCats = initialSettings.completionCats;
+        completionCatsRevision = initialSettings.completionCatsRevision;
+      }
+      completionCatsReady = true;
+      completionCatsStatusText = "已自动保存";
+    } else {
+      requireCompletionCatsReload();
+    }
     applyCompletedStatus(state.completedStatus);
+  }
+  if (!state.ok) {
+    completionCatsStatusText = "加载失败";
+    showCompletionCatError("无法读取素材设置，请刷新页面后重试。");
   }
   renderBallThemeColor();
   renderBallSize();
   renderColorPresets();
   renderScheduledTasks();
+  renderCompletionCats();
+  await cachedDataReady;
   await refreshCompletedData();
+}
+
+async function refreshCachedCompletedData() {
+  const version = completedCacheVersion;
+  try {
+    const result = await chrome.storage.local.get("todoCompletedBrowserState");
+    if (version !== completedCacheVersion) return;
+    applyCachedCompletedState(result.todoCompletedBrowserState);
+  } catch {
+    if (version !== completedCacheVersion) return;
+    completedCacheError = "无法读取浏览器完成记录缓存，已有记录未被修改。请刷新页面重试。";
+    updateCompletedFileCard();
+  }
+}
+
+function applyCachedCompletedState(saved) {
+  if (saved && (!saved.data || !Array.isArray(saved.data.completed))) {
+    throw new Error("完成记录缓存格式无效");
+  }
+  completedCacheError = "";
+  applyCompletedData(normalizeCompletedData(saved?.data), saved?.revision ?? 0);
+  if (saved?.storage) completedStatus = {
+    ...completedStatus,
+    storage: saved.storage,
+    fileSyncError: saved.fileSyncError || ""
+  };
 }
 
 function applyCompletedStatus(status) {
@@ -644,8 +1022,9 @@ function applyCompletedStatus(status) {
   updateCompletedFileCard();
 }
 
-function applyCompletedData(data) {
+function applyCompletedData(data, revision = completedDataRevision) {
   completedData = data && Array.isArray(data.completed) ? data : { completed: [] };
+  completedDataRevision = Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
   renderCompletedRecords();
   renderStats();
   renderWeeklySummary();
@@ -704,6 +1083,7 @@ function updateCompletedFileCard(detail = "") {
     elements.completedFileStatus.textContent = recoveryText || (detail
       ? `浏览器本地保存 · ${detail}`
       : "当前保存位置：浏览器本地（JSON 文件可选）");
+    if (completedCacheError) elements.completedFileStatus.textContent += " · " + completedCacheError;
     return;
   }
   const fileName = completedStatus?.fileName || "todo-completed.json";
@@ -713,6 +1093,7 @@ function updateCompletedFileCard(detail = "") {
   elements.completedPermissionBadge.textContent = granted ? "已授权" : permission || "未授权";
   elements.completedPermissionBadge.dataset.state = granted ? "granted" : "pending";
   elements.completedFileStatus.textContent = detail || (completedStatus?.fileName ? "已绑定完成记录文件" : "未绑定完成记录文件");
+  if (completedCacheError) elements.completedFileStatus.textContent += " · " + completedCacheError;
 }
 
 function formatFileUpdatedAt(data) {
@@ -739,6 +1120,50 @@ function resizeWeeklyChart() {
     chart?.resize();
   });
 }
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return;
+  if (changes.todoCompletedBrowserState) {
+    completedCacheVersion += 1;
+    try {
+      applyCachedCompletedState(changes.todoCompletedBrowserState.newValue);
+    } catch {
+      completedCacheError = "无法读取浏览器完成记录缓存，已有记录未被修改。请刷新页面重试。";
+    }
+    updateCompletedFileCard();
+  }
+  if (!changes.todoSettings) return;
+  settingsCacheVersion += 1;
+  const nextSettings = sanitizeSettings(changes.todoSettings.newValue);
+  const previousColorPresets = settings.colorPresets;
+  settings = nextSettings;
+  renderSettingsControls();
+  if (JSON.stringify(previousColorPresets) !== JSON.stringify(settings.colorPresets)) {
+    renderCompletedRecords();
+    renderWeeklySummary();
+  }
+  if (!completionCatsBackendCompatible) return;
+  if (!hasCompletionCatsSettings(changes.todoSettings.newValue)) {
+    requireCompletionCatsReload();
+    if (!completionCatsBusy) renderCompletionCats();
+    return;
+  }
+  if (changes.todoSettings.newValue && nextSettings.completionCatsRevision <= completionCatsRevision) return;
+  completionCats = nextSettings.completionCats;
+  completionCatsRevision = nextSettings.completionCatsRevision;
+  completionCatsReady = true;
+  if (!completionCatsBusy) {
+    completionCatsStatusText = "已自动保存";
+    renderCompletionCats();
+  }
+});
+
+elements.uploadCompletionCats.addEventListener("click", () => {
+  if (!completionCatsBusy && completionCatsReady) elements.completionCatFiles.click();
+});
+elements.completionCatFiles.addEventListener("change", () => {
+  uploadCompletionCatFiles([...elements.completionCatFiles.files]);
+});
 
 elements.completedSearch.addEventListener("input", renderCompletedRecords);
 elements.weeklyWeekSelect.addEventListener("change", () => {

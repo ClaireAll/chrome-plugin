@@ -4,6 +4,13 @@ const DEFAULT_BALL_THEME_COLOR = "#2563eb";
 export const BALL_SIZE_MIN = 36;
 export const BALL_SIZE_MAX = 88;
 export const BALL_SIZE_DEFAULT = 44;
+export const COMPLETION_CATS_CONFLICT_MESSAGE = "素材配置已在其他页面更新，本次操作未保存。";
+export const SETTINGS_CONFLICT_MESSAGE = "设置已在其他页面更新，本次操作未保存。";
+export const DEFAULT_COMPLETION_CATS = [
+  { id: "cream-orange", name: "奶油橘猫", type: "image/gif", builtin: true, enabled: true },
+  { id: "misty-blue", name: "胖胖蓝猫", type: "image/gif", builtin: true, enabled: true },
+  { id: "peach-calico", name: "桃桃三花", type: "image/gif", builtin: true, enabled: true }
+];
 
 export const DEFAULT_SETTINGS = {
   ballPosition: null,
@@ -11,7 +18,9 @@ export const DEFAULT_SETTINGS = {
   ballThemeColor: DEFAULT_BALL_THEME_COLOR,
   colorPresets: DEFAULT_COLOR_PRESETS,
   defaultColor: "#ffffff",
-  recurringTasks: []
+  recurringTasks: [],
+  completionCats: DEFAULT_COMPLETION_CATS,
+  completionCatsRevision: 0
 };
 
 export function sanitizeSettings(input) {
@@ -25,8 +34,40 @@ export function sanitizeSettings(input) {
     ballThemeColor: normalizeHexColor(source.ballThemeColor) || DEFAULT_BALL_THEME_COLOR,
     colorPresets,
     defaultColor,
-    recurringTasks: sanitizeRecurringTasks(source.recurringTasks)
+    recurringTasks: sanitizeRecurringTasks(source.recurringTasks),
+    completionCats: sanitizeCompletionCats(source.completionCats),
+    completionCatsRevision: Number.isSafeInteger(source.completionCatsRevision) && source.completionCatsRevision >= 0
+      ? source.completionCatsRevision
+      : 0
   };
+}
+
+export function sanitizeCompletionCats(value) {
+  if (!Array.isArray(value)) return DEFAULT_COMPLETION_CATS.map((cat) => ({ ...cat }));
+  const cats = DEFAULT_COMPLETION_CATS.map((cat) => ({
+    ...cat,
+    enabled: value.some((entry) => entry?.id === cat.id && entry.enabled === true)
+  }));
+  const ids = new Set(cats.map((cat) => cat.id));
+  for (const entry of value) {
+    const id = typeof entry?.id === "string" ? entry.id.trim() : "";
+    const type = entry?.type;
+    const dataUrl = typeof entry?.dataUrl === "string" ? entry.dataUrl : "";
+    const validImage = type === "image/png"
+      ? /^data:image\/png;base64,iVBORw0KGgo[A-Za-z0-9+/]*={0,2}$/.test(dataUrl)
+      : type === "image/gif" && /^data:image\/gif;base64,R0lGOD[dl]h[A-Za-z0-9+/]*={0,2}$/.test(dataUrl);
+    if (!/^custom-[a-zA-Z0-9-]+$/.test(id) || ids.has(id) || !validImage) continue;
+    cats.push({
+      id,
+      name: typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : "自定义小猫",
+      type,
+      builtin: false,
+      enabled: entry.enabled !== false,
+      dataUrl
+    });
+    ids.add(id);
+  }
+  return cats;
 }
 
 export function sanitizeColorPresets(value) {

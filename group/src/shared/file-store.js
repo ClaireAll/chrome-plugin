@@ -6,11 +6,14 @@ const HANDLE_STORE = "handles";
 const FILE_HANDLE_KEY = "group-json";
 const FILE_META_KEY = "groupFileMeta";
 const PERMISSION_MESSAGE = "需要在设置页授权 JSON 文件读写";
+const PERMISSION_QUERY_TIMEOUT_MS = 1500;
 
 export async function getFileStatus() {
   const handle = await getFileHandle();
   const meta = await chromeStorageGet(FILE_META_KEY);
-  const permission = handle ? await queryFilePermission(handle, "readwrite") : "missing";
+  const permission = handle
+    ? await queryFilePermission(handle, "readwrite").catch(() => "unknown")
+    : "missing";
   return {
     bound: Boolean(handle),
     fileName: handle?.name || meta?.[FILE_META_KEY]?.fileName || "",
@@ -180,10 +183,8 @@ function filePickerDefaults(options) {
 export async function ensureFilePermission(handle, mode, options = {}) {
   try {
     const permissionOptions = { mode };
-    if (typeof handle.queryPermission === "function") {
-      const current = await handle.queryPermission(permissionOptions);
-      if (current === "granted") return { ok: true };
-    }
+    const current = await queryFilePermission(handle, mode);
+    if (current === "granted") return { ok: true };
     if (options.allowRequest && typeof handle.requestPermission === "function") {
       const requested = await handle.requestPermission(permissionOptions);
       if (requested === "granted") return { ok: true };
@@ -202,11 +203,16 @@ function isPermissionError(error) {
 }
 
 async function queryFilePermission(handle, mode) {
+  if (typeof handle.queryPermission !== "function") return "unknown";
+  let timeoutId;
   try {
-    if (typeof handle.queryPermission !== "function") return "unknown";
-    return await handle.queryPermission({ mode });
-  } catch {
-    return "unknown";
+    // Chrome can leave permission queries for a restored file handle pending.
+    const timeout = new Promise((resolve) => {
+      timeoutId = setTimeout(() => resolve("unknown"), PERMISSION_QUERY_TIMEOUT_MS);
+    });
+    return await Promise.race([handle.queryPermission({ mode }), timeout]);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

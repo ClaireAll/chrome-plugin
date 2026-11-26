@@ -62,7 +62,28 @@
                 <h2 id="completedHeading">最近完成记录</h2>
                 <input id="completedSearch" type="search" placeholder="搜索任务" aria-label="搜索完成记录" />
               </div>
+              <p id="completedOperationError" class="settings-error" role="alert" hidden></p>
               <div id="completedList" class="completed-list"></div>
+            </section>
+            <section id="completionCatSection" class="options-section completion-cat-section" aria-labelledby="completionCatHeading">
+              <div class="completion-cat-heading">
+                <div>
+                  <h2 id="completionCatHeading">夸夸小猫</h2>
+                  <p class="section-subtitle">完成待办时，从勾选素材随机展示一张。</p>
+                </div>
+                <span id="completionCatStatus" class="completion-cat-status" role="status" aria-live="polite">加载中…</span>
+              </div>
+              <div id="completionCatList" class="completion-cat-list" role="group" aria-label="参与随机展示的小猫素材"></div>
+              <div class="completion-cat-toolbar">
+                <button id="uploadCompletionCats" class="completion-cat-upload" type="button">上传 PNG / GIF</button>
+                <input id="completionCatFiles" type="file" accept=".png,.gif,image/png,image/gif" multiple hidden />
+                <span id="completionCatCount" class="completion-cat-count">已选 0 张</span>
+              </div>
+              <p id="completionCatError" class="completion-cat-error" role="alert" hidden></p>
+              <div class="completion-cat-notes">
+                <p>全部不选时，不显示小猫和鼓励词。</p>
+                <p>浏览器本地保存，重启后保留。</p>
+              </div>
             </section>
             <div class="todo-options-lower">
               <section id="weeklySummary" class="todo-options-summary">
@@ -181,6 +202,7 @@
               </label>
               <button type="submit">添加任务</button>
             </form>
+            <p id="scheduledTaskError" class="settings-error" role="alert" hidden></p>
             <div id="scheduledTaskList" class="scheduled-task-list"></div>
           </section>
           <section class="todo-theme-preview todo-rail-theme-preview" aria-labelledby="colorHeading">
@@ -188,8 +210,9 @@
               <h2 id="colorHeading">主题颜色预览</h2>
               <button id="addColorPreset" class="theme-manage-button" type="button">添加颜色</button>
             </div>
-            <p class="theme-preview-label">点击色块可调整颜色，当前预览色会显示对勾。</p>
+            <p class="theme-preview-label">点击色块可调整颜色。</p>
             <div id="colorPresetList" class="color-preset-list"></div>
+            <p id="colorPresetError" class="settings-error" role="alert" hidden></p>
           </section>
         </aside>
       </div>

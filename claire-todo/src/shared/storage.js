@@ -1,5 +1,5 @@
 import { normalizeTodoItems } from "./domain.js";
-import { sanitizeSettings } from "./settings.js";
+import { COMPLETION_CATS_CONFLICT_MESSAGE, SETTINGS_CONFLICT_MESSAGE, sanitizeSettings } from "./settings.js";
 
 const TODO_ITEMS_KEY = "todoUnfinishedItems";
 const TODO_SETTINGS_KEY = "todoSettings";
@@ -46,7 +46,24 @@ export async function loadSettings() {
 
 export async function saveSettings(patch) {
   const current = await loadSettings();
-  const settings = sanitizeSettings({ ...current, ...(patch && typeof patch === "object" ? patch : {}) });
+  const source = patch && typeof patch === "object" ? patch : {};
+  for (const key of ["colorPresets", "recurringTasks"]) {
+    if (!Object.hasOwn(source, key) || !Object.hasOwn(source.expectedSettings || {}, key)) continue;
+    const expected = source.expectedSettings[key];
+    if (!Array.isArray(expected)
+      || JSON.stringify(current[key]) !== JSON.stringify(sanitizeSettings({ [key]: expected })[key])) {
+      throw new Error(SETTINGS_CONFLICT_MESSAGE);
+    }
+  }
+  const updatesCompletionCats = Object.hasOwn(source, "completionCats");
+  if (updatesCompletionCats && source.completionCatsRevision !== current.completionCatsRevision) {
+    throw new Error(COMPLETION_CATS_CONFLICT_MESSAGE);
+  }
+  const settings = sanitizeSettings({
+    ...current,
+    ...source,
+    completionCatsRevision: current.completionCatsRevision + (updatesCompletionCats ? 1 : 0)
+  });
   await storageSet({ [TODO_SETTINGS_KEY]: settings });
   return settings;
 }

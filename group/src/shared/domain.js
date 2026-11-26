@@ -179,31 +179,7 @@ export function getQuickAccessPages(data, limit = 5) {
 
   return pages
     .filter((page) => page.quickAccessPinned)
-    .sort((left, right) => {
-      if (left.openCount !== right.openCount) return right.openCount - left.openCount;
-      return String(right.lastOpenedAt || "").localeCompare(String(left.lastOpenedAt || ""));
-    })
     .slice(0, Math.max(0, Number(limit) || 0));
-}
-
-export function incrementPageOpenCount(data, pageId, openedAt = new Date().toISOString()) {
-  const source = normalizeData(data);
-  return {
-    ...source,
-    groups: source.groups.map((group) => {
-      const pages = group.pages.map((page) =>
-        page.id === pageId
-          ? {
-              ...clonePage(page),
-              openCount: page.openCount + 1,
-              lastOpenedAt: openedAt,
-              updatedAt: openedAt
-            }
-          : clonePage(page)
-      );
-      return { ...cloneGroup(group), pages };
-    })
-  };
 }
 
 export function setQuickAccessPinned(data, pageId, pinned) {

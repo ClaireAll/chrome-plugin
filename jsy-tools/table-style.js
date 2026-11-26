@@ -8,6 +8,7 @@
   let scheduled = false;
   let signature = "";
   const views = new Map();
+  const canvasSessions = new Map();
   const roots = new Set();
   const style = document.createElement("style");
   style.textContent = `
@@ -58,10 +59,57 @@
     views.delete(view);
   }
 
+  function redrawCanvas(session, root) {
+    if (!root.isConnected || session.disposed || session.suspended) return;
+    const { input, size, dpr } = session.environment;
+    session.update(input, size, dpr);
+  }
+
+  function styleCanvas(session, root) {
+    let record = canvasSessions.get(session);
+    if (!record) {
+      const original = session.runtime.update;
+      const wrapper = function(build) {
+        return original.call(this, () => {
+          const frame = build();
+          const styles = frame.styles;
+          const decorateStyle = style => ({
+            ...style,
+            backgroundColor: config.preset === "zebra" && style.backgroundColor !== styles.defaultStyle.backgroundColor
+              ? colors.stripe : "#ffffff",
+            text: { ...style.text, fontSize: colors.font },
+            borders: {
+              bottom: { color: colors.border, width: 1, style: "solid" },
+              ...(config.preset === "grid" && { right: { color: colors.border, width: 1, style: "solid" } }),
+            },
+          });
+          return { ...frame, styles: new styles.constructor({
+            revision: JSON.stringify([styles.revision, signature]),
+            defaultStyle: decorateStyle(styles.defaultStyle),
+            entries: Array.from(styles.styles, ([ref, style]) => ({ ref, style: decorateStyle(style) })),
+          }) };
+        });
+      };
+      record = { original, wrapper, root, signature: "" };
+      session.runtime.update = wrapper;
+      canvasSessions.set(session, record);
+    }
+    if (record.signature !== signature && !session.suspended) {
+      record.signature = signature;
+      redrawCanvas(session, root);
+    }
+  }
+
   function update() {
     scheduled = false;
     const active = config.enabled && /^\/decision\/home\/project\/[^/]+(?:\/|$)/.test(location.pathname);
     for (const [view, record] of views) if (!active || !record.element.isConnected) release(view, record);
+    for (const [session, record] of canvasSessions) {
+      if (active && record.root.isConnected && !session.disposed) continue;
+      if (session.runtime.update === record.wrapper) session.runtime.update = record.original;
+      canvasSessions.delete(session);
+      redrawCanvas(session, record.root);
+    }
     for (const root of roots) {
       if (!active || !root.isConnected) {
         root.removeAttribute("data-jsy-table-style");
@@ -91,6 +139,10 @@
           let hook = node.memoizedState;
           for (let count = 0; hook && count < 150; count++, hook = hook.next) {
             const instance = hook.memoizedState?.current;
+            if (element.closest(".crp-analysis-table-surface") && instance?.environment && !instance.disposed &&
+                typeof instance.update === "function" && typeof instance.runtime?.update === "function") {
+              styleCanvas(instance, root);
+            }
             const view = instance?.sheet?.data?.view;
             if (typeof view?.getCellData !== "function" || typeof instance.rerender !== "function" || found.has(view)) continue;
             found.add(view);

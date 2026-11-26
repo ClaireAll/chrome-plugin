@@ -3,7 +3,6 @@ import {
   createEmptyData,
   createPageDraft,
   deletePage,
-  incrementPageOpenCount,
   movePageToGroup,
   normalizeData,
   renamePage,
@@ -170,36 +169,19 @@ async function openGroup(payload) {
     return { ok: false, reason: "missing_group", message: "分组不存在" };
   }
 
-  const openedAt = new Date().toISOString();
-  const nextData = group.pages.reduce(
-    (current, page) => incrementPageOpenCount(current, page.id, openedAt),
-    data
-  );
-  const writeResult = await writeGroupData(nextData);
-  if (!writeResult.ok) return writeResult;
-
   for (const page of group.pages) {
     await chrome.tabs.create({ url: page.url, active: false });
   }
 
-  return { ok: true, opened: group.pages.length, data: nextData };
+  return { ok: true, opened: group.pages.length, data };
 }
 
 async function openPage(payload) {
   const url = typeof payload === "string" ? payload : payload?.url;
   if (!url) return { ok: false, reason: "missing_url", message: "页面地址无效" };
 
-  let data = null;
-  if (payload?.pageId) {
-    const readResult = await readGroupData();
-    if (!readResult.ok) return readResult;
-    data = incrementPageOpenCount(readResult.data, payload.pageId);
-    const writeResult = await writeGroupData(data);
-    if (!writeResult.ok) return writeResult;
-  }
-
   await chrome.tabs.create({ url, active: false });
-  return { ok: true, opened: 1, data };
+  return { ok: true, opened: 1 };
 }
 
 async function setQuickAccessPin(payload) {

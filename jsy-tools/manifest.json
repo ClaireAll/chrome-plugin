@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "jsy-tools",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "九数云效率工具：快捷上传 Excel、最近操作快捷栏、项目级表数据预览开关、表格样式与快捷创建副本。",
   "minimum_chrome_version": "111",
   "permissions": ["storage"],

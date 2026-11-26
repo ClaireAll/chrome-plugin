@@ -11,6 +11,12 @@
 }
 .jsy-batch-action:hover { background: var(--fd-color-primary-bg, #e6f7f6); }
 .jsy-batch-action:active { color: var(--fd-color-primary-active, #008d85); }
+.jsy-batch-action:disabled { background: transparent; color: var(--fd-color-text-disabled, #a4a9b2); cursor: not-allowed; }
+.jsy-batch-apply:not(:disabled) {
+  padding-inline: 8px;
+  background: var(--fd-color-primary-active, #008d85);
+  color: white;
+}
 
 .jsy-batch-toolbar {
   display: flex;
@@ -105,3 +111,5 @@ input.jsy-batch-check:indeterminate {
   .jsy-batch-picker option:first-child { display: none; }
   .jsy-batch-picker option:is(:hover, :focus-visible) { background: var(--fd-color-primary-bg, #e6f7f6); }
 }
+
+.jsy-batch-sort-status { color: var(--fd-color-error-text, #b12723); }

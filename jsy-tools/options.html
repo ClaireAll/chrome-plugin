@@ -10,13 +10,13 @@
 <body>
   <header class="topbar">
     <div class="brand"><img src="icons/icon-128.png" width="38" height="38" alt=""><div><h1>jsy-tools</h1><p>九数云效率工具</p></div></div>
-    <span class="version">v0.1.4</span>
+    <span class="version">v0.1.5</span>
   </header>
   <main aria-label="能力配置">
     <section class="feature" aria-labelledby="group-batch-title">
       <div class="feature-top">
         <span class="feature-icon" aria-hidden="true">Σ</span>
-        <div class="feature-heading"><h2 id="group-batch-title">分类汇总批量设置</h2><p>一次修改多个已添加字段的汇总方式。</p></div>
+        <div class="feature-heading"><h2 id="group-batch-title">分类汇总批量设置</h2><p>批量设置已添加汇总项的汇总方式或组内排序。</p></div>
         <span id="group-batch-state" class="feature-state">已关闭</span>
         <label class="switch"><input id="group-batch-enabled" type="checkbox" role="switch" aria-labelledby="group-batch-title"><span class="track" aria-hidden="true"></span></label>
       </div>
@@ -24,6 +24,7 @@
         <details class="usage"><summary>使用说明<span class="chevron" aria-hidden="true"></span></summary><div class="usage-content"><dl>
           <div><dt>选择字段</dt><dd>点击「合并上一步数据」左侧的「批量设置」。左侧选中或取消字段时，同一来源的所有已有汇总项会同步勾选或取消。也可以点击右侧胶囊单独调整。</dd></div>
           <div><dt>统一汇总方式</dt><dd>选择后立即应用。「第一项」和「最后一项」默认按各自来源字段升序排列。</dd></div>
+          <div><dt>设置排序</dt><dd>勾选第一项、最后一项或拼接汇总项，点击「设置排序」。在九数云弹窗中配置规则并确定，再点击「应用到 N 项」统一写入排序并退出批量模式。</dd></div>
         </dl></div></details>
       </div>
     </section>
